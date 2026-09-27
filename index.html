@@ -679,8 +679,10 @@ function burstDrop(d, ox, oy){
   dropPopSound(d.r / k, false);
 }
 
-function burstAt(x, y){
-  if (phase !== 'scatter' && phase !== 'reform') return false;
+// The drop under a point. Touching anything while it regroups stops the regroup, and the
+// half-formed pill becomes a drop of its own.
+function pickDrop(x, y){
+  if (phase !== 'scatter' && phase !== 'reform') return null;
   let target = null, best = Infinity;
   for (const d of drops){
     if (d.into || d.absorbing) continue;
@@ -688,11 +690,32 @@ function burstAt(x, y){
     const slop = Math.max(6, 14 - d.r * 0.3);     // small targets get a bigger touch margin
     if (g < slop && g < best){ best = g; target = d; }
   }
-  if (!target && phase === 'reform' && pill.scale > 0.05 && pillSdf(x, y) < 4) target = cancelReform();
-  if (!target) return false;
-  if (phase === 'reform') cancelReform();
-  burstDrop(target, x, y);
-  return true;
+  if (!target && phase === 'reform' && pill.scale > 0.05 && pillSdf(x, y) < 4) return cancelReform();
+  if (target && phase === 'reform') cancelReform();
+  return target;
+}
+
+function burstAt(x, y){
+  const d = pickDrop(x, y);
+  if (d) burstDrop(d, x, y);
+  return !!d;
+}
+
+// pointerId -> { drop, x, y, x0, y0, dragging }
+const grabs = new Map();
+const DRAG_START = 6;          // CSS px of travel before a press becomes a drag instead of a tap
+
+// Follow merges: if the held drop slid into a bigger one, the finger is now holding the bigger one.
+function resolveGrab(g){
+  let d = g.drop;
+  while (d && d.into) d = d.into;
+  if (d && (d.dead || !drops.includes(d))) d = null;
+  if (d !== g.drop){
+    if (g.drop){ g.drop.held = false; g.drop.grab = null; }
+    if (d){ d.held = g.dragging; d.grab = g; }
+    g.drop = d;
+  }
+  return d;
 }
 
 function burstLargest(){
@@ -739,6 +762,14 @@ function step(dt){
 
   if (phase === 'pop' || phase === 'scatter'){
     for (const d of drops){
+      if (d.held && d.grab && !d.into){
+        // critically damped follow: the drop lags the finger a little, so it stretches like liquid
+        const w = 30;
+        d.vx += (w * w * (d.grab.x - d.x) - 2 * w * d.vx) * dt;
+        d.vy += (w * w * (d.grab.y - d.y) - 2 * w * d.vy) * dt;
+        d.x += d.vx * dt; d.y += d.vy * dt;
+        continue;
+      }
       const f = Math.exp(-d.mu * dt);
       d.vx *= f; d.vy *= f;
       const sp = Math.hypot(d.vx, d.vy);
@@ -746,6 +777,9 @@ function step(dt){
       d.x += d.vx * dt; d.y += d.vy * dt;
     }
     if (phase === 'scatter') mergeDrops(dt);
+    for (const g of grabs.values()) resolveGrab(g);
+    // nothing regroups while a drop is being held
+    if (grabs.size) lastBurst = simT;
     const moving = drops.some(d => Math.hypot(d.vx, d.vy) > 6);
     const quiet = simT - lastBurst;
     if (phase === 'scatter' && ((quiet > REGROUP_AFTER && !moving) || quiet > REGROUP_AFTER + 1)) startReform();
@@ -765,6 +799,7 @@ function mergeDrops(dt){
       if (Math.hypot(a.x - b.x, a.y - b.y) < (a.r + b.r) * 1.15){
         const [big, small] = a.vol >= b.vol ? [a, b] : [b, a];
         small.into = big;
+        if (phase === 'scatter') plip();
         if (small === a) break;
       }
     }
@@ -854,7 +889,18 @@ canvas.addEventListener('pointermove', e => {
   const h = hitPill(e.clientX, e.clientY);
   if (h && !hover && !reduceMotion.matches) kickMode(0.9 * (pill.hh / 55), 3);
   hover = h;
-  canvas.style.cursor = h || overDrop(e.clientX, e.clientY) ? 'pointer' : 'default';
+  const g = grabs.get(e.pointerId);
+  if (g){
+    g.x = e.clientX; g.y = e.clientY;
+    if (!g.dragging && Math.hypot(g.x - g.x0, g.y - g.y0) > DRAG_START){
+      g.dragging = true;
+      const d = resolveGrab(g);
+      if (d) d.held = true;
+    }
+    lastActive = performance.now();
+  }
+  canvas.style.cursor = [...grabs.values()].some(v => v.dragging) ? 'grabbing'
+    : h ? 'pointer' : overDrop(e.clientX, e.clientY) ? 'grab' : 'default';
   if (pressed && e.pointerId === pointerId){
     pill.dentX = e.clientX; pill.dentY = e.clientY;
     pill.pressT = pillSdf(e.clientX, e.clientY) < 8 ? 1 : 0;
@@ -862,9 +908,18 @@ canvas.addEventListener('pointermove', e => {
 });
 canvas.addEventListener('pointerdown', e => {
   if (e.button !== 0) return;
-  // droplets pop on touch-down so rapid tapping (and multi-finger tapping) feels immediate
+  // droplets: a tap pops on release, a drag moves the drop; each finger can hold its own drop
   if (phase === 'scatter' || phase === 'reform'){
-    if (burstAt(e.clientX, e.clientY)){ audio(); lastActive = performance.now(); e.preventDefault(); }
+    const d = pickDrop(e.clientX, e.clientY);
+    if (!d) return;
+    audio();
+    const g = { drop: d, x: e.clientX, y: e.clientY, x0: e.clientX, y0: e.clientY, dragging: false };
+    for (const o of grabs.values()) if (o.drop === d) o.drop = null;
+    d.grab = g;
+    grabs.set(e.pointerId, g);
+    canvas.setPointerCapture(e.pointerId);
+    lastBurst = simT; lastActive = performance.now();
+    e.preventDefault();
     return;
   }
   if (!e.isPrimary || pressed || !hitPill(e.clientX, e.clientY)) return;
@@ -883,10 +938,25 @@ function release(e, cancel){
   if (inside){ audio(); pop(e.clientX, e.clientY); }
   else { pill.syV += 0.5; pill.sxV -= 0.4; }
 }
-canvas.addEventListener('pointerup', e => release(e, false));
-canvas.addEventListener('pointercancel', e => release(e, true));
-canvas.addEventListener('lostpointercapture', e => release(e, true));
-canvas.addEventListener('contextmenu', e => { if (pressed) release({ pointerId, clientX: 0, clientY: 0 }, true); });
+function releaseGrab(id, x, y, cancel){
+  const g = grabs.get(id);
+  if (!g) return;
+  grabs.delete(id);
+  const d = resolveGrab(g);
+  lastBurst = simT;                                   // regroup waits for a quiet moment after letting go
+  canvas.style.cursor = 'default';
+  if (!d) return;
+  d.held = false; d.grab = null;
+  if (!g.dragging && !cancel && phase === 'scatter'){ burstDrop(d, x, y); return; }
+  // a flick keeps its momentum, within reason
+  const k = pill.hh / 55, sp = Math.hypot(d.vx, d.vy), max = 900 * k;
+  if (sp > max){ d.vx *= max / sp; d.vy *= max / sp; }
+}
+function releaseAllGrabs(){ for (const id of [...grabs.keys()]) releaseGrab(id, 0, 0, true); }
+canvas.addEventListener('pointerup', e => { releaseGrab(e.pointerId, e.clientX, e.clientY, false); release(e, false); });
+canvas.addEventListener('pointercancel', e => { releaseGrab(e.pointerId, 0, 0, true); release(e, true); });
+canvas.addEventListener('lostpointercapture', e => { releaseGrab(e.pointerId, 0, 0, true); release(e, true); });
+canvas.addEventListener('contextmenu', e => { releaseAllGrabs(); if (pressed) release({ pointerId, clientX: 0, clientY: 0 }, true); });
 
 btnEl.addEventListener('click', () => {
   audio();
@@ -902,7 +972,7 @@ btnEl.addEventListener('keyup', e => { if (e.key === ' ' || e.key === 'Enter') p
 // a key held while focus leaves never sends its keyup to the button
 const clearKeyPress = () => { if (!pressed) pill.pressT = 0; };
 btnEl.addEventListener('blur', clearKeyPress);
-window.addEventListener('blur', () => { clearKeyPress(); if (pressed) release({ pointerId, clientX: 0, clientY: 0 }, true); });
+window.addEventListener('blur', () => { clearKeyPress(); releaseAllGrabs(); if (pressed) release({ pointerId, clientX: 0, clientY: 0 }, true); });
 document.addEventListener('keyup', e => { if (e.key === ' ' || e.key === 'Enter') clearKeyPress(); });
 
 let resizeQueued = false;
@@ -953,7 +1023,7 @@ function render(time, dt){
     if (tl > maxT){ tx = d.x + (tx - d.x) * maxT / tl; ty = d.y + (ty - d.y) * maxT / tl; }
     const shrink = 1 / Math.sqrt(1 + Math.min(tl, maxT) / (2 * Math.max(d.r, 0.5)) * 0.8);
     // droplets moving fast are mostly airborne and barely wet the surface they cross
-    const wetting = 1 - Math.min(Math.hypot(d.vx, d.vy) / (160 * pill.hh / 55), 0.85);
+    const wetting = d.held ? 1 : 1 - Math.min(Math.hypot(d.vx, d.vy) / (160 * pill.hh / 55), 0.85);
     dropBuf[i*4] = toX(d.x); dropBuf[i*4+1] = toY(d.y); dropBuf[i*4+2] = d.r * shrink * dpr; dropBuf[i*4+3] = wetting;
     tailBuf[i*2] = toX(tx); tailBuf[i*2+1] = toY(ty);
   }
