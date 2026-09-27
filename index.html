@@ -847,22 +847,33 @@ function mergeDrops(dt){
     let t = d.into;
     while (t && t.into) t = t.into;
     if (!t || t.dead){ d.into = null; continue; }
-    if (d.into !== t || d.mergeT === undefined){ d.mergeT = 0; d.vol0 = d.vol; }
+    if (d.into !== t || d.mergeT === undefined){
+      d.mergeT = 0; d.vol0 = d.vol;
+      // momentum is shared once, as the drops touch; after that the merging drop moves with its partner
+      if (!t.held){
+        const M0 = t.vol + d.vol;
+        t.vx = (t.vx * t.vol + d.vx * d.vol) / M0; t.vy = (t.vy * t.vol + d.vy * d.vol) / M0;
+      }
+    }
     d.into = t;
     d.mergeT += dt;
-    const tau = 0.05 + 0.0032 * (t.r + d.r) / k;
+    // the smaller drop sets the pace: a droplet touching a big drop is swallowed quickly,
+    // two big drops take visibly longer
+    const tau = 0.04 + 0.0045 * d.r / k;
     // the neck starts thin, so draining starts slow and speeds up
     const ramp = Math.min(1, d.mergeT / (tau * 1.5));
     const pull = 1 - Math.exp(-dt / tau);
     const M = t.vol + d.vol;
-    const cx = (t.x * t.vol + d.x * d.vol) / M, cy = (t.y * t.vol + d.y * d.vol) / M;
     const angle = Math.atan2(d.y - t.y, d.x - t.x);
-    d.x += (cx - d.x) * pull; d.y += (cy - d.y) * pull;
-    if (!t.held){ t.x += (cx - t.x) * pull * 0.8; t.y += (cy - t.y) * pull * 0.8; }
+    // work in the partner's frame, so a merging drop rides along with a drop that is moving (or being
+    // dragged) instead of lagging behind it; the gap closes with the partner giving way by its share of mass
+    const rx = d.x - t.x, ry = d.y - t.y;
+    const give = t.held ? 0 : d.vol / M;
+    t.x += rx * pull * give; t.y += ry * pull * give;
+    d.x = t.x + rx * (1 - pull); d.y = t.y + ry * (1 - pull);
+    d.vx = t.vx; d.vy = t.vy;
     // exponential drain, floored so the last of it doesn't linger: done within ~3 tau
     const mv = Math.min(Math.max(d.vol * (1 - Math.exp(-dt * ramp / tau)), d.vol0 * dt / (3 * tau) * ramp), d.vol);
-    t.vx = (t.vx * t.vol + d.vx * mv) / (t.vol + mv);
-    t.vy = (t.vy * t.vol + d.vy * mv) / (t.vol + mv);
     d.vol -= mv; t.vol += mv;
     d.r = Math.cbrt(Math.max(d.vol, 0)); t.r = Math.cbrt(t.vol);
     // the wobble starts when the two surfaces have visibly become one, not when the last volume moves
@@ -1080,7 +1091,8 @@ function render(time, dt){
     if (d.wob){
       const kk = pill.hh / 55;
       const w = TAU * 7 * Math.pow(10 * kk / Math.max(d.r, 1), 0.75);
-      const s = d.wob * Math.sin(w * d.wobT + Math.PI / 2);
+      // starts from round and grows, so a merge never snaps the drop into a stretched shape
+      const s = d.wob * Math.sin(w * d.wobT);
       const a = d.wobA + (s < 0 ? Math.PI / 2 : 0);
       const e = Math.abs(s) * d.r;
       ex = Math.cos(a) * e; ey = Math.sin(a) * e;
