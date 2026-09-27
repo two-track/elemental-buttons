@@ -591,7 +591,7 @@ function pop(ox = pill.cx, oy = pill.cy){
   pill.pressT = 0;
   splashSound();
   const k = pill.hh / 55;
-  const sets = [[7, 13, 19], [14, 7, 11.5], [26, 2.4, 5.5]];
+  const sets = [[10, 13, 19], [22, 7, 11.5], [30, 2.4, 5.5]];
   drops = [];
   const L = pill.hw - pill.hh;
   for (const [count, r0, r1] of sets){
@@ -618,6 +618,21 @@ function pop(ox = pill.cx, oy = pill.cy){
         into: null, delay: 0, absorbing: false, born: simT,
       });
     }
+  }
+  // Conserve water. Drops and pill share the same cross-section profile, so volumes compare in units
+  // where a drop of radius r holds r^3: the pill (half-cylinder of radius R and length 2L, plus two
+  // quarter-sphere caps) holds 1.5 R^2 L + R^3. The spray keeps its size; the larger pieces take the rest.
+  const R = pill.hh, Lp = Math.max(pill.hw - pill.hh, 0);
+  const Vpill = 1.5 * R * R * 2 * Lp / 2 + R * R * R;
+  const spray = drops.filter(d => d.r < 6 * k), body = drops.filter(d => d.r >= 6 * k);
+  const vSpray = spray.reduce((s, d) => s + d.vol, 0), vBody = body.reduce((s, d) => s + d.vol, 0);
+  const grow = Math.cbrt(Math.max(Vpill - vSpray, vBody) / vBody);
+  // heavier pieces are thrown harder and slide further, so they separate before they can coalesce
+  for (const d of body){
+    d.r *= grow; d.vol = d.r * d.r * d.r;
+    d.vx *= 1.7; d.vy *= 1.7;
+    d.mu = rand(3.4, 4.6);
+    d.born = simT + 0.25;
   }
   V0 = drops.reduce((s, d) => s + d.vol, 0);
   pill.absorbed = 0;
@@ -775,6 +790,12 @@ function step(dt){
       const sp = Math.hypot(d.vx, d.vy);
       if (sp < 22 * (pill.hh / 55)){ d.vx *= Math.exp(-dt * 18); d.vy *= Math.exp(-dt * 18); }
       d.x += d.vx * dt; d.y += d.vy * dt;
+      // the screen edge acts like a lip: drops stop at it instead of sliding out of reach
+      const m = d.r + 4;
+      if (d.x < m){ d.x = m; d.vx = Math.abs(d.vx) * 0.25; }
+      if (d.x > cssW - m){ d.x = cssW - m; d.vx = -Math.abs(d.vx) * 0.25; }
+      if (d.y < m){ d.y = m; d.vy = Math.abs(d.vy) * 0.25; }
+      if (d.y > cssH - m){ d.y = cssH - m; d.vy = -Math.abs(d.vy) * 0.25; }
     }
     if (phase === 'scatter') mergeDrops(dt);
     for (const g of grabs.values()) resolveGrab(g);
