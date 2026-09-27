@@ -134,8 +134,9 @@ void main(){
   float letters = uTextDepth * uLetters * txt * step(0.999, x);
   float lip = uLip * 3.0 * exp(-pow((sd - 5.) / 3.5, 2.));
   float inPill = smoothstep(2., -6., sd);
-  float h = bedAt(p) - crumbs(p) * inPill + uPillH * (1. - 0.25 * uSoft) * shoulder * dome - letters + lip;
-  float inside = smoothstep(0.0, 0.25, clamp(-sd / 6., 0., 1.));
+  vec2 bp = p - uPill.xy + 1000.;
+  float h = bedAt(bp) - crumbs(bp) * inPill + uPillH * (1. - 0.25 * uSoft) * shoulder * dome - letters + lip;
+  float inside = smoothstep(0.0, 0.25, clamp((1.0 - sdEdge) / 6., 0., 1.));
   float packed = inside * (1. - uSoft);
   float w = 1.;
   if (uRegion.x > 0.) w = 1. - smoothstep(uRegion.x - uRegion.y, uRegion.x, sd);
@@ -151,6 +152,7 @@ uniform sampler2D uSrc;
 uniform vec4 uTool;       // cx, cy, radius, depth below the local surface
 uniform float uCrater;    // 1: conical crater with a wide, uneven ejecta ring
 uniform float uSeed;
+uniform float uJfix;      // ratio of cell counts to continuous areas for this stamp's disc and ring
 out vec4 o;
 float hAt(vec2 p){
   vec2 f = p - 0.5; vec2 i = floor(f); vec2 t = f - i;
@@ -185,14 +187,20 @@ void main(){
   float a = r, b = r * (uCrater > 0.5 ? 2.0 : 1.55);
   vec2 d = p - C;
   float s = length(d);
+  vec2 gsz = vec2(textureSize(uSrc, 0));
+  vec2 dir = d / max(s, 1e-4);
   if (s < r){
+    // sand that would be thrown off the edge of the grid stays put, so the stamp stays closed
+    vec2 dest = C + dir * sqrt(a*a + s*s * (b*b - a*a) / (r*r));
+    if (any(lessThan(dest, vec2(0.))) || any(greaterThanEqual(dest, gsz))){ o = c; return; }
     float nh = min(c.r, tipAt(s));
     if (nh < c.r - 0.05) c.a = max(c.a, 0.35);       // exposed sand from below the surface is damper
     c.r = nh;
   } else if (s < b){
     float t = r * sqrt(max((s*s - a*a) / (b*b - a*a), 0.));
-    vec2 q = C + d / max(s, 1e-4) * t;
-    float ex = max(hAt(q) - tipAt(t), 0.) * (r*r) / (b*b - a*a);
+    vec2 q = C + dir * t;
+    if (any(lessThan(q, vec2(0.))) || any(greaterThanEqual(q, gsz))){ o = c; return; }
+    float ex = max(hAt(q) - tipAt(t), 0.) * (r*r) / (b*b - a*a) * uJfix;
     // uneven throw; the mean of the noise is 1 so the volume is kept on average
     float n = hash12(floor(p * (uCrater > 0.5 ? 0.35 : 0.6)) + uSeed);
     ex *= uCrater > 0.5 ? 0.3 + 1.4 * n : 0.8 + 0.4 * n;
@@ -242,7 +250,7 @@ void main(){
   }
   // Kinetic sand that has lost its mould sags like a very thick liquid: height spreads out over a few
   // px per step. Pairwise with a symmetric coefficient (mean fluidity of the pair), so still conserved.
-  if (uMelt > 0. && c.b > 0.001){
+  if (uMelt > 0.){
     for (int ring = 0; ring < 2; ring++){
       float R = ring == 0 ? 3. : 7.;
       float kc = ring == 0 ? 0.014 : 0.007;
@@ -373,7 +381,8 @@ void main(){
   // Grains live in the sand's own space (two per CSS px, whatever the display), and are reseeded as
   // the surface height changes, so moving sand visibly turns over instead of sliding under a fixed pattern.
   vec2 gp = css * 2.0;
-  vec2 gcell = floor(gp) + floor(h * 1.3) * vec2(17.13, 7.71);
+  // the reseed threshold is dithered per grain, so height contours don't show up as bands
+  vec2 gcell = floor(gp) + floor(h * 1.3 + hash12(floor(gp) + 40.1)) * vec2(17.13, 7.71);
   float g0 = hash12(gcell), g1 = hash12(gcell + vec2(1., -1.));
   vec2 gr = hash22(gcell) - 0.5;
   float clump = vnoise(css * 0.7) - 0.5;
@@ -496,7 +505,7 @@ function makeTarget(...texs){
 function bindTex(unit, tex){ gl.activeTexture(gl.TEXTURE0 + unit); gl.bindTexture(gl.TEXTURE_2D, tex); }
 
 // ---------------------------------------------------------------- state
-let cssW = 0, cssH = 0, dpr = 1, W = 0, H = 0, GW = 0, GH = 0;
+let cssW = 0, cssH = 0, cssH0 = 0, dpr = 1, W = 0, H = 0, GW = 0, GH = 0;
 let sand = [], sandFb = [], cur = 0;            // ping-pong simulation state
 let shadeA, shadeB, shadeFb;                    // per-cell shading inputs
 const textTex = gl.createTexture();
@@ -519,6 +528,16 @@ function activeRect(){
   x1 = Math.min(GW, Math.ceil(x1)); y1 = Math.min(GH, Math.ceil(y1));
   if (x1 <= x0 || y1 <= y0) return null;
   return [x0, y0, x1 - x0, y1 - y0];
+}
+
+function jacobianFix(cx, cy, r, b){
+  let nd = 0, nr = 0;
+  const x0 = Math.floor(cx - b), x1 = Math.ceil(cx + b), y0 = Math.floor(cy - b), y1 = Math.ceil(cy + b);
+  for (let j = y0; j <= y1; j++) for (let i = x0; i <= x1; i++){
+    const d = Math.hypot(i + 0.5 - cx, j + 0.5 - cy);
+    if (d < r) nd++; else if (d < b) nr++;
+  }
+  return nr ? (nd / nr) / (r * r / (b * b - r * r)) : 1;
 }
 
 function simPass(prog, setup, rect){
@@ -588,6 +607,7 @@ function targetUniforms(u, amt, region, soft = 0, letters = 1, lip = 0){
 
 function resize(){
   if (lost || gl.isContextLost()) return;
+  cssH0 = cssH;
   cssW = Math.max(1, window.innerWidth); cssH = Math.max(1, window.innerHeight);
   dpr = Math.min(window.devicePixelRatio || 1, 2);
   const maxPx = 8.3e6;
@@ -597,6 +617,7 @@ function resize(){
   dpr = W / cssW;
 
   const oldTex = sand[cur], oldW = GW, oldH = GH;
+  const oldCssH = cssH0, oldPx = pill.cx, oldPy = pill.cy;
   const oldOther = sand[1 - cur];
   GW = Math.ceil(cssW); GH = Math.ceil(cssH);
   sandFb.forEach(f => gl.deleteFramebuffer(f));
@@ -614,9 +635,16 @@ function resize(){
   // fresh sand everywhere, then carry over whatever was sculpted, centred
   simPass(P.target, u => targetUniforms(u, 1, null), null);
   if (oldTex){
-    const offX = Math.round((GW - oldW) / 2), offY = Math.round((GH - oldH) / 2);
+    // align on the pill (whose position the bed texture is also keyed to), so no seams
+    const offX = Math.round(pill.cx - oldPx), offY = Math.round((cssH - pill.cy) - (oldCssH - oldPy));
     simPass(P.copy, u => { bindTex(1, oldTex); gl.uniform1i(u.uOld, 1); gl.uniform2f(u.uOff, offX, offY); }, null);
     gl.deleteTexture(oldTex);
+    // CSS-space positions move by the same offset (grid y is flipped)
+    const sx = offX, sy = (cssH - oldCssH) - offY;
+    if (slump){ slump.x += sx; slump.y += sy; }
+    for (const st of stamps){ st.x += sx; st.y += sy; }
+    for (const g of grains){ g.x += sx; g.y += sy; }
+    for (const a of active){ a.x0 += offX; a.x1 += offX; a.y0 += offY; a.y1 += offY; }
     disturbed = true; lastTouch = simT;
   }
   syncBuffers(null);
@@ -738,6 +766,7 @@ function startSlump(x, y){
 function crater(x, y){
   noteTouch(x, y, 20);
   const r = fingerR() * 1.9;
+  noteTouch(x, y, r * 2);
   stamps.push({ x, y, r, depth: r * 0.6, crater: true });
   craterSound();
   // mostly fine spray thrown outward and low, with a few crumbs
@@ -763,7 +792,7 @@ canvas.addEventListener('pointerdown', e => {
   if (e.button !== 0 || ptr) return;
   audio();
   ptr = { id: e.pointerId, x0: e.clientX, y0: e.clientY, x: e.clientX, y: e.clientY, lx: e.clientX, ly: e.clientY, dragging: false, speed: 0, t: performance.now() };
-  canvas.setPointerCapture(e.pointerId);
+  try { canvas.setPointerCapture(e.pointerId); } catch {}
   if (reform) reform = null;
   e.preventDefault();
 });
@@ -783,9 +812,12 @@ function endPointer(e, cancel){
   const p = ptr; ptr = null;
   canvas.style.cursor = 'default';
   scrapeLevel(0);
-  if (!p.dragging && !cancel) tap(p.x, p.y);
+  if (p.dragging) layStamps(p.lx, p.ly, p.x, p.y);
+  else if (!cancel) tap(p.x, p.y);
 }
 canvas.addEventListener('pointerup', e => endPointer(e, false));
+canvas.addEventListener('contextmenu', e => e.preventDefault());
+btnEl.addEventListener('keydown', e => { if (e.repeat) e.preventDefault(); });
 canvas.addEventListener('pointercancel', e => endPointer(e, true));
 canvas.addEventListener('lostpointercapture', e => endPointer(e, true));
 window.addEventListener('blur', () => { if (ptr) endPointer({ pointerId: ptr.id }, true); });
@@ -799,12 +831,7 @@ function plough(dt){
   scrapeLevel(ptr.speed);
   if (dist < 0.5) return;
   const fr = fingerR();
-  const n = Math.min(40, Math.ceil(dist / (fr * 0.3)));
-  for (let i = 1; i <= n; i++){
-    const x = ptr.lx + dx * i / n, y = ptr.ly + dy * i / n;
-    stamps.push({ x, y, r: fr * rand(0.92, 1.08), depth: fr * FINGER_DEPTH * rand(0.88, 1.12), crater: false });
-  }
-  noteTouch(ptr.x, ptr.y, fr);
+  layStamps(ptr.lx, ptr.ly, ptr.x, ptr.y);
   // a fast finger flicks a few grains ahead of it
   if (ptr.speed > 350 && Math.random() < dt * 30){
     const ux = dx / dist, uy = dy / dist;
@@ -814,6 +841,19 @@ function plough(dt){
     }
   }
   ptr.lx = ptr.x; ptr.ly = ptr.y;
+}
+
+// fingertip presses along a segment of the pointer's path
+function layStamps(x0, y0, x1, y1){
+  const dx = x1 - x0, dy = y1 - y0, dist = Math.hypot(dx, dy);
+  if (dist < 0.5) return;
+  const fr = fingerR();
+  const n = Math.min(40, Math.ceil(dist / (fr * 0.3)));
+  for (let i = 1; i <= n; i++){
+    const x = x0 + dx * i / n, y = y0 + dy * i / n;
+    stamps.push({ x, y, r: fr * rand(0.92, 1.08), depth: fr * FINGER_DEPTH * rand(0.88, 1.12), crater: false });
+    noteTouch(x, y, fr * 1.6);
+  }
 }
 
 // ---------------------------------------------------------------- frame
@@ -849,18 +889,31 @@ function step(dt){
 
 function simulate(dt){
   // everything this frame is scissored to one rectangle
-  for (const s of stamps) touch(s.x, s.y, s.r * 2 + 40, 2.5);
+  const live = stamps.filter(s => {
+    const b = s.r * (s.crater ? 2 : 1.55);
+    return s.x + b > 0 && s.x - b < cssW && s.y + b > 0 && s.y - b < cssH;
+  });
+  stamps.length = 0;
+  for (const s of live) touch(s.x, s.y, s.r * 2 + 40, 2.5);
   const rect = activeRect();
-  if (!rect && !stamps.length) return false;
+  if (!rect) return false;
 
-  for (const s of stamps){
+  // each press only changes its own box: scissor to it, then copy that box to the other buffer so
+  // the pair stays identical everywhere and the next pass can read either
+  for (const s of live){
+    const b = s.r * (s.crater ? 2 : 1.55);
+    const gx = s.x, gy = cssH - s.y;
+    const bx = Math.max(0, Math.floor(gx - b - 1)), by = Math.max(0, Math.floor(gy - b - 1));
+    const box = [bx, by, Math.min(GW, Math.ceil(gx + b + 1)) - bx, Math.min(GH, Math.ceil(gy + b + 1)) - by];
+    if (box[2] <= 0 || box[3] <= 0) continue;
     simPass(P.stamp, u => {
-      gl.uniform4f(u.uTool, s.x, cssH - s.y, s.r, s.depth);
+      gl.uniform4f(u.uTool, gx, gy, s.r, s.depth);
       gl.uniform1f(u.uCrater, s.crater ? 1 : 0);
       gl.uniform1f(u.uSeed, Math.random() * 100);
-    }, rect);
+      gl.uniform1f(u.uJfix, jacobianFix(gx, gy, s.r, b));
+    }, box);
+    syncBuffers(box);
   }
-  stamps.length = 0;
 
   if (slump){
     simPass(P.slump, u => {
@@ -901,7 +954,7 @@ function shade(rect){
   gl.viewport(0, 0, GW, GH);
   if (rect){
     // shadows reach well outside what moved
-    const pad = 60;
+    const pad = 80;
     const r = [Math.max(0, rect[0] - pad), Math.max(0, rect[1] - pad)];
     r.push(Math.min(GW, rect[0] + rect[2] + pad) - r[0], Math.min(GH, rect[1] + rect[3] + pad) - r[1]);
     gl.enable(gl.SCISSOR_TEST); gl.scissor(...r);
