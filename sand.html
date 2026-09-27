@@ -1,0 +1,925 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Sand Button</title>
+<style>
+  :root { color-scheme: light; }
+  html, body { margin: 0; height: 100%; background: #c9ae86; overflow: hidden; }
+  canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
+  #btn {
+    position: fixed; margin: 0; padding: 0; border: 0; background: transparent;
+    border-radius: 999px; color: transparent; font-size: 1px; pointer-events: none;
+  }
+  #btn:focus { outline: none; }
+  #btn:focus-visible { outline: 2px solid #2a1f14; outline-offset: 10px; box-shadow: 0 0 0 12px rgba(255,248,235,.85); }
+  #mute {
+    position: fixed; right: 16px; bottom: 16px; width: 36px; height: 36px; border-radius: 50%;
+    border: 0; background: rgba(60,40,20,.22); color: rgba(255,250,240,.92); cursor: pointer;
+    display: grid; place-items: center; backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+  }
+  #mute:hover { background: rgba(60,40,20,.32); }
+  #mute svg { width: 18px; height: 18px; }
+  #fallback { display: none; position: fixed; inset: 0; place-items: center; font: 16px system-ui; color: #3a2a1a; }
+</style>
+</head>
+<body>
+<canvas id="gl"></canvas>
+<button id="btn" type="button" aria-label="Button">Button</button>
+<button id="mute" type="button" aria-label="Mute sound" aria-pressed="false">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M11 5 6 9H3v6h3l5 4z"/><path class="on" d="M15.5 8.5a5 5 0 0 1 0 7M18.5 5.5a9 9 0 0 1 0 13"/>
+    <path class="off" d="m16 9 6 6m0-6-6 6" style="display:none"/>
+  </svg>
+</button>
+<div id="fallback">This needs WebGL2 with float render targets.</div>
+
+<script>
+(() => {
+'use strict';
+
+const canvas = document.getElementById('gl');
+const btnEl = document.getElementById('btn');
+const muteEl = document.getElementById('mute');
+const gl = canvas.getContext('webgl2', { antialias: false, alpha: false, depth: false, stencil: false, preserveDrawingBuffer: false });
+if (!gl || !gl.getExtension('EXT_color_buffer_float')) {
+  document.getElementById('fallback').style.display = 'grid';
+  canvas.remove();
+  return;
+}
+let lost = false;
+canvas.addEventListener('webglcontextlost', e => { e.preventDefault(); lost = true; });
+canvas.addEventListener('webglcontextrestored', () => location.reload());
+
+// ---------------------------------------------------------------- tuning (lengths in CSS px)
+const BED = 22;              // depth of the sand bed
+const PILL_H = 30;           // how far the moulded button stands above the bed
+const TEXT_DEPTH = 3.2;      // how deep the letters are pressed in
+const TALUS_LOOSE = 0.75;    // tan of the angle of repose (~37 deg) for loose sand
+const TALUS_PACKED = 40;     // packed, moulded sand holds any wall
+const FINGER_R = 10;         // plough fingertip radius
+const FINGER_DEPTH = 13;     // how far below the bed surface the fingertip reaches
+const SLIDE_ITERS = 20;      // avalanche relaxation steps per frame
+const REFORM_AFTER = 2.5;    // seconds of quiet before the mould presses the button back
+
+// ---------------------------------------------------------------- shaders
+const VS = `#version 300 es
+void main(){ vec2 p = vec2(float((gl_VertexID<<1)&2), float(gl_VertexID&2)); gl_Position = vec4(p*2.-1., 0., 1.); }`;
+
+const COMMON = `#version 300 es
+precision highp float;
+precision highp sampler2D;
+float hash12(vec2 p){ vec3 p3 = fract(vec3(p.xyx)*.1031); p3 += dot(p3, p3.yzx+33.33); return fract((p3.x+p3.y)*p3.z); }
+vec2 hash22(vec2 p){ vec3 p3 = fract(vec3(p.xyx)*vec3(.1031,.1030,.0973)); p3 += dot(p3, p3.yzx+33.33); return fract((p3.xx+p3.yz)*p3.zy); }
+float vnoise(vec2 p){
+  vec2 i = floor(p), f = fract(p);
+  vec2 u = f*f*(3.-2.*f);
+  return mix(mix(hash12(i), hash12(i+vec2(1,0)), u.x), mix(hash12(i+vec2(0,1)), hash12(i+vec2(1,1)), u.x), u.y);
+}
+float fbm(vec2 p){ float s = 0., a = .5; for (int i = 0; i < 5; i++){ s += a*vnoise(p); p = p*2.03 + 11.7; a *= .5; } return s; }
+`;
+
+// State texture (grid = 1 cell per CSS px, y up): r = sand height, g = packing (1 = moulded, holds
+// any slope), b = fluidity (a slumping block briefly flows below the angle of repose), a = moisture
+// (travels with the sand, so damp sand stays dark wherever it is pushed or slides).
+
+// Pristine state: flat bed plus the moulded button with its label pressed in. Blended in over a
+// region for the reform, or everywhere for initialisation.
+const FS_TARGET = COMMON + `
+uniform sampler2D uSrc;
+uniform sampler2D uText;
+uniform vec4 uPill;       // cx, cy, halfW, halfH
+uniform vec2 uRegion;     // reach beyond the pill outline, feather; reach <= 0 means everywhere
+uniform float uAmt;
+uniform float uBed, uPillH, uTextDepth;
+out vec4 o;
+void main(){
+  vec2 p = gl_FragCoord.xy;
+  vec4 cur = texelFetch(uSrc, ivec2(p), 0);
+  vec2 q = p - uPill.xy;
+  float r = uPill.w, L = max(uPill.z - r, 0.);
+  float sd = length(vec2(max(abs(q.x) - L, 0.), q.y)) - r;
+  // moulded shoulder: a rounded edge a few px wide, then a gently domed top
+  float x = clamp(-sd / 7.0, 0., 1.);
+  float shoulder = sqrt(1. - (1. - x) * (1. - x));
+  vec2 qn = q / uPill.zw;
+  float dome = 1.0 + 0.07 * (1. - clamp(dot(qn, qn), 0., 1.));
+  float bed = uBed + 0.7 * (fbm(p * 0.018) - 0.5) + 0.25 * (vnoise(p * 0.21) - 0.5);
+  float txt = texture(uText, q / (uPill.zw * 2.) + 0.5).r;
+  float h = bed + uPillH * shoulder * dome - uTextDepth * txt * x;
+  float packed = smoothstep(0.0, 0.25, x);
+  float w = 1.;
+  if (uRegion.x > 0.) w = 1. - smoothstep(uRegion.x - uRegion.y, uRegion.x, sd);
+  float a = clamp(uAmt * w, 0., 1.);
+  o = vec4(mix(cur.r, h, a), mix(cur.g, packed, a), cur.b * (1. - a), mix(cur.a, packed, a));
+}`;
+
+// A fingertip pressed into the sand. Sand inside the tip is pushed out and piled just outside it:
+// the ring r..r*sqrt2 has the same area as the disc, and the map t^2 = s^2 - r^2 from ring radius s
+// to disc radius t preserves area, so every bit of sand removed lands in the ring exactly once.
+const FS_STAMP = COMMON + `
+uniform sampler2D uSrc;
+uniform vec4 uTool;       // cx, cy, radius, lowest point of the tip
+uniform float uScatter;   // > 0: throw the sand unevenly, for craters
+uniform float uSeed;
+out vec4 o;
+float hAt(vec2 p){
+  vec2 f = p - 0.5; vec2 i = floor(f); vec2 t = f - i;
+  ivec2 a = ivec2(i);
+  ivec2 m = textureSize(uSrc, 0) - 1;
+  float h00 = texelFetch(uSrc, clamp(a, ivec2(0), m), 0).r;
+  float h10 = texelFetch(uSrc, clamp(a + ivec2(1,0), ivec2(0), m), 0).r;
+  float h01 = texelFetch(uSrc, clamp(a + ivec2(0,1), ivec2(0), m), 0).r;
+  float h11 = texelFetch(uSrc, clamp(a + ivec2(1,1), ivec2(0), m), 0).r;
+  return mix(mix(h00, h10, t.x), mix(h01, h11, t.x), t.y);
+}
+float tipAt(float t){ float r = uTool.z; return uTool.w + r - sqrt(max(r*r - t*t, 0.)); }
+void main(){
+  vec2 p = gl_FragCoord.xy;
+  vec4 c = texelFetch(uSrc, ivec2(p), 0);
+  vec2 d = p - uTool.xy;
+  float s = length(d), r = uTool.z;
+  if (s < r){
+    c.r = min(c.r, tipAt(s));
+  } else if (s < r * 1.41421356){
+    float t = sqrt(max(s*s - r*r, 0.));
+    vec2 q = uTool.xy + d / max(s, 1e-4) * t;
+    float ex = max(hAt(q) - tipAt(t), 0.);
+    if (uScatter > 0.) ex *= 0.35 + 1.3 * hash12(floor(p * 0.5) + uSeed);
+    float mq = texelFetch(uSrc, clamp(ivec2(q), ivec2(0), textureSize(uSrc, 0) - 1), 0).a;
+    c.a = (c.a * c.r + mq * ex) / max(c.r + ex, 1e-3);
+    c.r += ex;
+    c.g = mix(c.g, 0., clamp(ex * 2., 0., 1.));     // pushed-out sand is loose
+  }
+  o = c;
+}`;
+
+// Avalanching. Each pair of neighbours exchanges sand in proportion to how far their height
+// difference exceeds the angle of repose. The flux is antisymmetric (both cells compute the same
+// amount with opposite sign, using the upper cell's packing), so sand is conserved exactly.
+const FS_SLIDE = COMMON + `
+uniform sampler2D uSrc;
+uniform float uTl, uTp, uFluidDecay;
+uniform float uMelt;      // 0 unless something is slumping
+out vec4 o;
+float talus(vec4 c, ivec2 cell){
+  float n = hash12(vec2(cell));
+  float loose = uTl * (0.85 + 0.3 * n) * (1. - 0.9 * c.b);
+  return mix(loose, uTp, c.g);
+}
+void main(){
+  ivec2 ip = ivec2(gl_FragCoord.xy);
+  ivec2 m = textureSize(uSrc, 0) - 1;
+  vec4 c = texelFetch(uSrc, ip, 0);
+  float dh = 0., dm = 0.;
+  for (int k = 0; k < 8; k++){
+    ivec2 off = k == 0 ? ivec2(1,0) : k == 1 ? ivec2(-1,0) : k == 2 ? ivec2(0,1) : k == 3 ? ivec2(0,-1)
+              : k == 4 ? ivec2(1,1) : k == 5 ? ivec2(-1,-1) : k == 6 ? ivec2(1,-1) : ivec2(-1,1);
+    ivec2 jp = ip + off;
+    if (any(lessThan(jp, ivec2(0))) || any(greaterThan(jp, m))) continue;
+    vec4 n = texelFetch(uSrc, jp, 0);
+    float diff = n.r - c.r;
+    bool upN = diff > 0.;
+    float dist = k < 4 ? 1. : 1.41421356;
+    float coef = k < 4 ? 0.08 : 0.04;
+    float T = talus(upN ? n : c, upN ? jp : ip) * dist;
+    float flux = coef * sign(diff) * max(abs(diff) - T, 0.);
+    dh += flux;
+    dm += flux * (upN ? n.a : c.a);          // sand carries the moisture of the cell it left
+  }
+  // Kinetic sand that has lost its mould sags like a very thick liquid: height spreads out over a few
+  // px per step. Pairwise with a symmetric coefficient (mean fluidity of the pair), so still conserved.
+  if (uMelt > 0. && c.b > 0.001){
+    for (int ring = 0; ring < 2; ring++){
+      float R = ring == 0 ? 3. : 7.;
+      float kc = ring == 0 ? 0.028 : 0.017;
+      for (int k = 0; k < 8; k++){
+        float a = float(k) * 0.7853982 + float(ring) * 0.3926991;
+        ivec2 jp = ip + ivec2(round(vec2(cos(a), sin(a)) * R));
+        if (any(lessThan(jp, ivec2(0))) || any(greaterThan(jp, m))) continue;
+        vec4 n = texelFetch(uSrc, jp, 0);
+        float fl = kc * uMelt * 0.5 * (c.b + n.b) * (n.r - c.r);
+        dh += fl;
+        dm += fl * (fl > 0. ? n.a : c.a);
+      }
+    }
+  }
+  float h = c.r + dh;
+  float wet = h > 1e-3 ? clamp((c.a * c.r + dm) / h, 0., 1.) : c.a;
+  o = vec4(h, c.g, c.b * uFluidDecay, wet);
+}`;
+
+// Breaking the mould: packing is lost inside a growing circle, and that sand briefly flows.
+const FS_SLUMP = COMMON + `
+uniform sampler2D uSrc;
+uniform vec3 uFront;      // cx, cy, radius
+uniform float uDecay;
+out vec4 o;
+void main(){
+  vec2 p = gl_FragCoord.xy;
+  vec4 c = texelFetch(uSrc, ivec2(p), 0);
+  float inside = 1. - smoothstep(uFront.z - 18., uFront.z, length(p - uFront.xy));
+  float lost = c.g * (1. - mix(1., uDecay, inside));
+  c.g -= lost;
+  // it gives way in clumps: fluidity is patchy, so the block sags unevenly instead of melting smoothly
+  float clumps = 0.35 + 0.65 * smoothstep(0.25, 0.75, vnoise(p * 0.09) * 0.7 + vnoise(p * 0.3) * 0.3);
+  c.b = max(c.b, min(1., lost * 3. * clumps));
+  o = c;
+}`;
+
+const FS_COPY = COMMON + `
+uniform sampler2D uSrc;
+uniform sampler2D uOld;
+uniform vec2 uOff;        // old grid origin in new grid coords
+out vec4 o;
+void main(){
+  ivec2 ip = ivec2(gl_FragCoord.xy);
+  ivec2 q = ip - ivec2(uOff);
+  ivec2 m = textureSize(uOld, 0);
+  if (all(greaterThanEqual(q, ivec2(0))) && all(lessThan(q, m))) o = texelFetch(uOld, q, 0);
+  else o = texelFetch(uSrc, ip, 0);
+}`;
+
+// Per-cell shading inputs: slope, soft cast shadow from a low sun, ambient occlusion.
+const FS_SHADE = COMMON + `
+uniform sampler2D uSrc;
+uniform vec3 uSun;        // direction to the sun (x right, y up, z out of the sand)
+layout(location = 0) out vec4 o0;
+layout(location = 1) out vec4 o1;
+float H(ivec2 p){ return texelFetch(uSrc, clamp(p, ivec2(0), textureSize(uSrc, 0) - 1), 0).r; }
+void main(){
+  ivec2 ip = ivec2(gl_FragCoord.xy);
+  vec4 c = texelFetch(uSrc, ip, 0);
+  float gx = (H(ip + ivec2(1,0)) - H(ip - ivec2(1,0))) * 0.5;
+  float gy = (H(ip + ivec2(0,1)) - H(ip - ivec2(0,1))) * 0.5;
+  vec2 sd = normalize(uSun.xy);
+  float rise = uSun.z / length(uSun.xy);
+  float lit = 1.;
+  for (int i = 1; i <= 26; i++){
+    float t = float(i) * float(i) * 0.12 + float(i) * 1.2;
+    float hs = H(ivec2(vec2(ip) + 0.5 + sd * t));
+    float above = hs - (c.r + t * rise);
+    lit = min(lit, clamp(1. - above / (0.9 + t * 0.09), 0., 1.));
+  }
+  float occ = 0.;
+  for (int i = 0; i < 8; i++){
+    float a = float(i) * 0.785398;
+    vec2 dir = vec2(cos(a), sin(a));
+    occ += max(H(ivec2(vec2(ip) + dir * 4.)) - c.r, 0.) * 0.6 + max(H(ivec2(vec2(ip) + dir * 11.)) - c.r, 0.) * 0.25;
+  }
+  float ao = clamp(1. - occ / 8. * 0.16, 0.35, 1.);
+  o0 = vec4(-gx, -gy, lit, ao);
+  o1 = vec4(c.g, c.r, c.a, 1.);
+}`;
+
+const FS_COMPOSITE = COMMON + `
+uniform sampler2D uN;
+uniform sampler2D uQ;
+uniform vec2 uGrid;       // grid size in cells (CSS px)
+uniform vec2 uCss;        // viewport in CSS px
+uniform float uDpr;
+uniform vec3 uSun;
+uniform float uBed;
+out vec4 o;
+void main(){
+  vec2 fp = gl_FragCoord.xy;
+  vec2 css = fp / uDpr;
+  vec2 uv = css / uGrid;
+  vec4 N = texture(uN, uv);
+  vec4 Q = texture(uQ, uv);
+  float packed = clamp(Q.x, 0., 1.);
+  float h = Q.y;
+  float wet = clamp(Q.z, 0., 1.);
+
+  // grains: every device pixel is a grain or two, with its own tilt and tint
+  vec2 gcell = floor(fp);
+  vec2 gr = hash22(gcell) - 0.5;
+  float gt = hash12(gcell + 17.3);
+  float clump = vnoise(css * 0.7) - 0.5;
+  float clump2 = vnoise(css * 2.3 + 5.1) - 0.5;
+  float rough = mix(1.0, 0.6, max(packed, wet * 0.6));
+  vec3 n = normalize(vec3(N.xy + gr * 0.32 * rough + (clump * vec2(0.22, -0.18) + clump2 * vec2(-0.1, 0.12)) * rough, 1.));
+
+  // damp packed sand is darker and richer than the dry, loose sand that gets pushed around
+  vec3 dry = vec3(0.86, 0.74, 0.56);
+  vec3 damp = vec3(0.60, 0.46, 0.31);
+  vec3 alb = mix(dry, damp, wet * 0.9);
+  alb *= 0.94 + 0.12 * gt + 0.06 * clump;
+  alb = mix(alb, alb * 0.45, step(0.975, gt));                         // dark mineral grains
+  alb = mix(alb, vec3(0.97, 0.95, 0.9), step(0.992, hash12(gcell + 3.1)) * (1. - wet * 0.7));  // quartz
+  // sand scooped from deep in the bed is a touch damper than the sun-dried surface
+  alb *= 1.0 - 0.18 * smoothstep(uBed - 2., uBed - 12., h) * (1. - wet);
+
+  vec3 L = normalize(uSun);
+  float dif = max(dot(n, L), 0.) * N.z;
+  vec3 sun = vec3(1.0, 0.92, 0.80) * 1.12;
+  vec3 sky = vec3(0.56, 0.62, 0.74) * 0.62;
+  vec3 col = alb * (sun * dif + sky * N.w * (0.55 + 0.45 * n.z));
+  // the odd grain catches the sun
+  vec3 hv = normalize(L + vec3(0., 0., 1.));
+  float glint = pow(max(dot(n, hv), 0.), 60.) * step(0.985, hash12(gcell + 9.7)) * N.z;
+  col += vec3(1.0, 0.95, 0.85) * glint * 0.9;
+
+  vec2 vu = css / uCss - 0.5;
+  col *= 1.0 - 0.18 * smoothstep(0.35, 0.85, length(vu * vec2(1.1, 1.0)));
+  col = pow(col, vec3(0.95));
+  col += (hash12(fp + 0.37) - 0.5) / 255.;
+  o = vec4(col, 1.);
+}`;
+
+// Flying grains from a crater, and their shadows on the sand.
+const VS_GRAIN = `#version 300 es
+in vec4 aP;               // x, y (CSS px, y down), height above sand, size
+in float aShade;
+uniform vec2 uCss;
+uniform float uDpr;
+uniform float uShadow;
+uniform vec2 uShadowDir;
+out float vShade;
+void main(){
+  vec2 p = aP.xy + (uShadow > 0.5 ? uShadowDir * aP.z : vec2(0., -aP.z * 0.35));
+  gl_Position = vec4(p.x / uCss.x * 2. - 1., 1. - p.y / uCss.y * 2., 0., 1.);
+  gl_PointSize = aP.w * uDpr * (uShadow > 0.5 ? 1.15 : 1.0);
+  vShade = aShade;
+}`;
+const FS_GRAIN = `#version 300 es
+precision highp float;
+in float vShade;
+uniform float uShadow;
+out vec4 o;
+void main(){
+  vec2 c = gl_PointCoord - 0.5;
+  float r = length(c);
+  if (r > 0.5) discard;
+  if (uShadow > 0.5){ o = vec4(0.18, 0.12, 0.06, 0.28 * smoothstep(0.5, 0.2, r)); return; }
+  vec3 base = mix(vec3(0.62, 0.50, 0.34), vec3(0.93, 0.82, 0.64), vShade);
+  float lit = 0.8 + 0.35 * clamp(-c.x - c.y + 0.3, 0., 1.);
+  o = vec4(base * lit, smoothstep(0.5, 0.35, r));
+}`;
+
+// ---------------------------------------------------------------- GL plumbing
+function compile(type, src){
+  const s = gl.createShader(type);
+  gl.shaderSource(s, src); gl.compileShader(s);
+  if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s) + '\n' + src.split('\n').map((l,i)=>(i+1)+': '+l).join('\n'));
+  return s;
+}
+function program(fs, vs = VS){
+  const p = gl.createProgram();
+  gl.attachShader(p, compile(gl.VERTEX_SHADER, vs));
+  gl.attachShader(p, compile(gl.FRAGMENT_SHADER, fs));
+  gl.linkProgram(p);
+  if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p));
+  const u = {};
+  const n = gl.getProgramParameter(p, gl.ACTIVE_UNIFORMS);
+  for (let i = 0; i < n; i++){
+    const info = gl.getActiveUniform(p, i);
+    u[info.name.replace(/\[0\]$/, '')] = gl.getUniformLocation(p, info.name);
+  }
+  return { p, u };
+}
+const P = {
+  target: program(FS_TARGET), stamp: program(FS_STAMP), slide: program(FS_SLIDE),
+  slump: program(FS_SLUMP), copy: program(FS_COPY), shade: program(FS_SHADE),
+  comp: program(FS_COMPOSITE), grain: program(FS_GRAIN, VS_GRAIN),
+};
+const vao = gl.createVertexArray();
+
+function makeTex(w, h, internal, format, type, filter){
+  const t = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, t);
+  gl.texImage2D(gl.TEXTURE_2D, 0, internal, w, h, 0, format, type, null);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, filter);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, filter);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  return t;
+}
+function makeTarget(...texs){
+  const fb = gl.createFramebuffer();
+  gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+  texs.forEach((t, i) => gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0 + i, gl.TEXTURE_2D, t, 0));
+  if (texs.length > 1) gl.drawBuffers(texs.map((_, i) => gl.COLOR_ATTACHMENT0 + i));
+  const ok = gl.checkFramebufferStatus(gl.FRAMEBUFFER) === gl.FRAMEBUFFER_COMPLETE;
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  if (!ok) throw new Error('framebuffer incomplete');
+  return fb;
+}
+function bindTex(unit, tex){ gl.activeTexture(gl.TEXTURE0 + unit); gl.bindTexture(gl.TEXTURE_2D, tex); }
+
+// ---------------------------------------------------------------- state
+let cssW = 0, cssH = 0, dpr = 1, W = 0, H = 0, GW = 0, GH = 0;
+let sand = [], sandFb = [], cur = 0;            // ping-pong simulation state
+let shadeA, shadeB, shadeFb;                    // per-cell shading inputs
+const textTex = gl.createTexture();
+const pill = { cx: 0, cy: 0, hw: 0, hh: 0 };    // CSS px, y down
+
+// Everything the simulation touches this frame is confined to one rectangle (grid coords). Both
+// ping-pong buffers are kept identical outside it, so passes can be scissored to it.
+let active = [];                                // { x0, y0, x1, y1, until }
+let simT = 0;
+function touch(cx, cy, r, secs){
+  const gx = cx, gy = cssH - cy;
+  active.push({ x0: gx - r, y0: gy - r, x1: gx + r, y1: gy + r, until: simT + secs });
+}
+function activeRect(){
+  active = active.filter(a => a.until > simT);
+  if (!active.length) return null;
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (const a of active){ x0 = Math.min(x0, a.x0); y0 = Math.min(y0, a.y0); x1 = Math.max(x1, a.x1); y1 = Math.max(y1, a.y1); }
+  x0 = Math.max(0, Math.floor(x0)); y0 = Math.max(0, Math.floor(y0));
+  x1 = Math.min(GW, Math.ceil(x1)); y1 = Math.min(GH, Math.ceil(y1));
+  if (x1 <= x0 || y1 <= y0) return null;
+  return [x0, y0, x1 - x0, y1 - y0];
+}
+
+function simPass(prog, setup, rect){
+  const dst = 1 - cur;
+  gl.bindFramebuffer(gl.FRAMEBUFFER, sandFb[dst]);
+  gl.viewport(0, 0, GW, GH);
+  if (rect){ gl.enable(gl.SCISSOR_TEST); gl.scissor(...rect); } else gl.disable(gl.SCISSOR_TEST);
+  gl.useProgram(prog.p);
+  bindTex(0, sand[cur]); gl.uniform1i(prog.u.uSrc, 0);
+  setup(prog.u);
+  gl.bindVertexArray(vao);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+  cur = dst;
+}
+function syncBuffers(rect){
+  gl.bindFramebuffer(gl.READ_FRAMEBUFFER, sandFb[cur]);
+  gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, sandFb[1 - cur]);
+  if (rect){ gl.enable(gl.SCISSOR_TEST); gl.scissor(...rect); } else gl.disable(gl.SCISSOR_TEST);
+  const [x, y, w, h] = rect || [0, 0, GW, GH];
+  gl.blitFramebuffer(x, y, x + w, y + h, x, y, x + w, y + h, gl.COLOR_BUFFER_BIT, gl.NEAREST);
+  gl.bindFramebuffer(gl.READ_FRAMEBUFFER, null);
+  gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, null);
+}
+
+function layout(){
+  const base = Math.min(cssW * 0.30, cssH * 0.30, 270);
+  pill.hw = Math.max(base, 120) / 2;
+  pill.hh = pill.hw * 0.62;
+  pill.cx = cssW / 2;
+  pill.cy = cssH * 0.45;
+  const s = btnEl.style;
+  s.left = (pill.cx - pill.hw) + 'px'; s.top = (pill.cy - pill.hh) + 'px';
+  s.width = pill.hw * 2 + 'px'; s.height = pill.hh * 2 + 'px';
+  buildText();
+}
+
+function buildText(){
+  const w = Math.round(pill.hw * 2), h = Math.round(pill.hh * 2);
+  const c = document.createElement('canvas');
+  c.width = w * 2; c.height = h * 2;                // 2x, sampled down with filtering for smooth letter walls
+  const x = c.getContext('2d');
+  x.fillStyle = '#000'; x.fillRect(0, 0, c.width, c.height);
+  const fs = pill.hh * 0.5 * 2;
+  x.font = `700 ${fs}px -apple-system, BlinkMacSystemFont, "SF Pro Display", Inter, "Segoe UI", system-ui, sans-serif`;
+  x.textAlign = 'center'; x.textBaseline = 'middle';
+  x.filter = 'blur(1.2px)';
+  x.fillStyle = '#fff';
+  x.fillText('Button', c.width / 2, c.height / 2 + fs * 0.04);
+  gl.bindTexture(gl.TEXTURE_2D, textTex);
+  gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, c);
+  gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+}
+
+function targetUniforms(u, amt, region){
+  bindTex(1, textTex); gl.uniform1i(u.uText, 1);
+  gl.uniform4f(u.uPill, pill.cx, cssH - pill.cy, pill.hw, pill.hh);
+  gl.uniform2f(u.uRegion, ...(region || [-1, 1]));
+  gl.uniform1f(u.uAmt, amt);
+  gl.uniform1f(u.uBed, BED); gl.uniform1f(u.uPillH, PILL_H); gl.uniform1f(u.uTextDepth, TEXT_DEPTH);
+}
+
+function resize(){
+  if (lost || gl.isContextLost()) return;
+  cssW = Math.max(1, window.innerWidth); cssH = Math.max(1, window.innerHeight);
+  dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const maxPx = 8.3e6;
+  if (cssW * cssH * dpr * dpr > maxPx) dpr = Math.sqrt(maxPx / (cssW * cssH));
+  canvas.width = Math.max(1, Math.round(cssW * dpr)); canvas.height = Math.max(1, Math.round(cssH * dpr));
+  W = gl.drawingBufferWidth; H = gl.drawingBufferHeight;
+  dpr = W / cssW;
+
+  const oldTex = sand[cur], oldW = GW, oldH = GH;
+  const oldOther = sand[1 - cur];
+  GW = Math.ceil(cssW); GH = Math.ceil(cssH);
+  sandFb.forEach(f => gl.deleteFramebuffer(f));
+  if (oldOther) gl.deleteTexture(oldOther);
+  [shadeA, shadeB].forEach(t => t && gl.deleteTexture(t));
+  if (shadeFb) gl.deleteFramebuffer(shadeFb);
+  sand = [0, 1].map(() => makeTex(GW, GH, gl.RGBA32F, gl.RGBA, gl.FLOAT, gl.NEAREST));
+  sandFb = sand.map(t => makeTarget(t));
+  shadeA = makeTex(GW, GH, gl.RGBA16F, gl.RGBA, gl.HALF_FLOAT, gl.LINEAR);
+  shadeB = makeTex(GW, GH, gl.RGBA16F, gl.RGBA, gl.HALF_FLOAT, gl.LINEAR);
+  shadeFb = makeTarget(shadeA, shadeB);
+  cur = 0;
+
+  layout();
+  // fresh sand everywhere, then carry over whatever was sculpted, centred
+  simPass(P.target, u => targetUniforms(u, 1, null), null);
+  if (oldTex){
+    const offX = Math.round((GW - oldW) / 2), offY = Math.round((GH - oldH) / 2);
+    simPass(P.copy, u => { bindTex(1, oldTex); gl.uniform1i(u.uOld, 1); gl.uniform2f(u.uOff, offX, offY); }, null);
+    gl.deleteTexture(oldTex);
+    disturbed = true; lastTouch = simT;
+  }
+  syncBuffers(null);
+  shade(null);
+  dirty = true;
+}
+
+// ---------------------------------------------------------------- audio
+let actx = null, muted = false, scrape = null;
+function audio(){
+  if (muted) return null;
+  if (!actx){ try { actx = new (window.AudioContext || window.webkitAudioContext)(); } catch { return null; } }
+  if (actx.state === 'suspended') actx.resume();
+  return actx;
+}
+const noiseCache = new Map();
+function noise(a, dur){
+  const key = a.sampleRate + ':' + dur;
+  if (noiseCache.has(key)) return noiseCache.get(key);
+  const len = Math.floor(a.sampleRate * dur), b = a.createBuffer(1, len, a.sampleRate), d = b.getChannelData(0);
+  for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
+  noiseCache.set(key, b);
+  return b;
+}
+function burst(type, freq, q, gain, dur, delay = 0){
+  const a = audio(); if (!a) return;
+  const t = a.currentTime + delay;
+  const src = a.createBufferSource(); src.buffer = noise(a, 1);
+  const f = a.createBiquadFilter(); f.type = type; f.frequency.value = freq; f.Q.value = q;
+  const g = a.createGain();
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.exponentialRampToValueAtTime(gain, t + Math.min(0.01, dur * 0.2));
+  g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  src.connect(f).connect(g).connect(a.destination);
+  src.start(t, Math.random() * 0.5); src.stop(t + dur + 0.02);
+}
+// grains landing or trickling: a patter of tiny, bright ticks
+function patter(n, spread, gain, delay = 0){
+  for (let i = 0; i < n; i++) burst('highpass', 3500 + Math.random() * 3000, 0.7, gain * (0.5 + Math.random() * 0.5), 0.012 + Math.random() * 0.012, delay + Math.random() * spread);
+}
+function slumpSound(){
+  burst('lowpass', 380, 0.8, 0.22, 0.9);
+  burst('bandpass', 900, 0.6, 0.07, 1.1, 0.05);
+  patter(40, 1.1, 0.05, 0.08);
+}
+function craterSound(){
+  burst('bandpass', 1700, 0.8, 0.16, 0.16);
+  burst('lowpass', 500, 0.7, 0.10, 0.12);
+  patter(26, 0.45, 0.06, 0.06);
+}
+function reformSound(){
+  const a = audio(); if (!a) return;
+  const t = a.currentTime;
+  const o = a.createOscillator(), g = a.createGain();
+  o.type = 'sine'; o.frequency.setValueAtTime(110, t); o.frequency.exponentialRampToValueAtTime(55, t + 0.22);
+  g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.28, t + 0.01); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.3);
+  o.connect(g).connect(a.destination); o.start(t); o.stop(t + 0.32);
+  burst('lowpass', 700, 0.7, 0.14, 0.25);
+  burst('bandpass', 2400, 0.9, 0.05, 0.6, 0.02);
+}
+// the continuous scrape of a finger through sand, loudness following its speed
+function scrapeLevel(speed){
+  const a = audio(); if (!a) return;
+  if (!scrape){
+    const src = a.createBufferSource(); src.buffer = noise(a, 2); src.loop = true;
+    const f = a.createBiquadFilter(); f.type = 'bandpass'; f.frequency.value = 2000; f.Q.value = 0.6;
+    const f2 = a.createBiquadFilter(); f2.type = 'lowpass'; f2.frequency.value = 5000;
+    const g = a.createGain(); g.gain.value = 0;
+    src.connect(f).connect(f2).connect(g).connect(a.destination); src.start();
+    scrape = { src, f, g };
+  }
+  const lvl = Math.min(speed / 900, 1);
+  scrape.g.gain.setTargetAtTime(0.16 * lvl, a.currentTime, 0.04);
+  scrape.f.frequency.setTargetAtTime(1400 + 1400 * lvl, a.currentTime, 0.05);
+}
+muteEl.addEventListener('click', () => {
+  muted = !muted;
+  if (muted && scrape) scrape.g.gain.value = 0;
+  muteEl.setAttribute('aria-pressed', String(muted));
+  muteEl.setAttribute('aria-label', muted ? 'Unmute sound' : 'Mute sound');
+  muteEl.querySelector('.on').style.display = muted ? 'none' : '';
+  muteEl.querySelector('.off').style.display = muted ? '' : 'none';
+});
+
+// ---------------------------------------------------------------- interactions
+let pillIntact = true;       // the moulded button is untouched
+let disturbed = false;       // something near the button needs the mould
+let lastTouch = -10;
+let slump = null;            // { x, y, t } breaking the mould outward from a point
+let meltUntil = -1;          // long-range spreading runs while slumped sand is still fluid
+let reform = null;           // { t }
+const stamps = [];           // pending fingertip presses (CSS px)
+const grains = [];           // airborne grains
+let dirty = true;
+const rand = (a, b) => a + Math.random() * (b - a);
+
+function pillSdf(x, y){
+  const L = Math.max(pill.hw - pill.hh, 0);
+  return Math.hypot(Math.max(Math.abs(x - pill.cx) - L, 0), y - pill.cy) - pill.hh;
+}
+function nearPill(x, y, r){ return pillSdf(x, y) < Math.max(pill.hw, pill.hh) * 0.6 + r; }
+function noteTouch(x, y, r){
+  lastTouch = simT;
+  if (nearPill(x, y, r)){ disturbed = true; if (pillSdf(x, y) < r) pillIntact = false; }
+  if (reform){ reform = null; }
+}
+
+function startSlump(x, y){
+  pillIntact = false; disturbed = true; lastTouch = simT;
+  slump = { x, y, t: 0 };
+  meltUntil = simT + 6;
+  touch(pill.cx, pill.cy, Math.max(pill.hw, pill.hh) + 90, 5);
+  slumpSound();
+  dirty = true;
+}
+
+function crater(x, y){
+  noteTouch(x, y, 20);
+  stamps.push({ x, y, r: 21, depth: 15, scatter: true });
+  craterSound();
+  for (let i = 0; i < 110; i++){
+    const a = rand(0, Math.PI * 2), sp = rand(40, 230);
+    grains.push({ x: x + Math.cos(a) * rand(4, 14), y: y + Math.sin(a) * rand(4, 14), z: rand(1, 6),
+      vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, vz: rand(90, 320), size: rand(1.2, 2.6), shade: Math.random() });
+  }
+  dirty = true;
+}
+
+function tap(x, y){
+  audio();
+  if (pillIntact && pillSdf(x, y) < 0) startSlump(x, y);
+  else crater(x, y);
+}
+
+// ---------------------------------------------------------------- input
+let ptr = null;              // { id, x0, y0, x, y, lx, ly, dragging, speed }
+const DRAG_START = 5;
+canvas.addEventListener('pointerdown', e => {
+  if (e.button !== 0 || ptr) return;
+  audio();
+  ptr = { id: e.pointerId, x0: e.clientX, y0: e.clientY, x: e.clientX, y: e.clientY, lx: e.clientX, ly: e.clientY, dragging: false, speed: 0, t: performance.now() };
+  canvas.setPointerCapture(e.pointerId);
+  if (reform) reform = null;
+  e.preventDefault();
+});
+canvas.addEventListener('pointermove', e => {
+  if (!ptr || e.pointerId !== ptr.id){
+    canvas.style.cursor = pillIntact && pillSdf(e.clientX, e.clientY) < 0 ? 'pointer' : 'default';
+    return;
+  }
+  ptr.x = e.clientX; ptr.y = e.clientY;
+  if (!ptr.dragging && Math.hypot(ptr.x - ptr.x0, ptr.y - ptr.y0) > DRAG_START){
+    ptr.dragging = true; ptr.lx = ptr.x0; ptr.ly = ptr.y0;
+    canvas.style.cursor = 'grabbing';
+  }
+});
+function endPointer(e, cancel){
+  if (!ptr || e.pointerId !== ptr.id) return;
+  const p = ptr; ptr = null;
+  canvas.style.cursor = 'default';
+  scrapeLevel(0);
+  if (!p.dragging && !cancel) tap(p.x, p.y);
+}
+canvas.addEventListener('pointerup', e => endPointer(e, false));
+canvas.addEventListener('pointercancel', e => endPointer(e, true));
+canvas.addEventListener('lostpointercapture', e => endPointer(e, true));
+window.addEventListener('blur', () => { if (ptr) endPointer({ pointerId: ptr.id }, true); });
+btnEl.addEventListener('click', () => { audio(); if (pillIntact) startSlump(pill.cx, pill.cy); else crater(pill.cx, pill.cy); });
+
+// plough: lay fingertip presses along the path the pointer took since last frame
+function plough(dt){
+  if (!ptr || !ptr.dragging) return;
+  const dx = ptr.x - ptr.lx, dy = ptr.y - ptr.ly, dist = Math.hypot(dx, dy);
+  ptr.speed += ((dist / Math.max(dt, 1e-3)) - ptr.speed) * Math.min(1, dt * 12);
+  scrapeLevel(ptr.speed);
+  if (dist < 0.5) return;
+  const n = Math.min(40, Math.ceil(dist / (FINGER_R * 0.3)));
+  for (let i = 1; i <= n; i++){
+    const x = ptr.lx + dx * i / n, y = ptr.ly + dy * i / n;
+    stamps.push({ x, y, r: FINGER_R, depth: FINGER_DEPTH, scatter: false });
+  }
+  noteTouch(ptr.x, ptr.y, FINGER_R);
+  // a fast finger flicks a few grains ahead of it
+  if (ptr.speed > 350 && Math.random() < dt * 30){
+    const ux = dx / dist, uy = dy / dist;
+    for (let i = 0; i < 3; i++){
+      const a = Math.atan2(uy, ux) + rand(-0.9, 0.9), sp = rand(60, 160);
+      grains.push({ x: ptr.x + ux * FINGER_R, y: ptr.y + uy * FINGER_R, z: rand(1, 4), vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, vz: rand(60, 160), size: rand(1.1, 2), shade: Math.random() });
+    }
+  }
+  ptr.lx = ptr.x; ptr.ly = ptr.y;
+}
+
+// ---------------------------------------------------------------- frame
+const SUN = [-0.56, 0.56, 0.62];     // from the upper left, fairly low so every groove throws a shadow
+
+function step(dt){
+  simT += dt;
+  plough(dt);
+
+  if (slump){
+    slump.t += dt;
+    if (slump.t > 0.8) slump = null;
+  }
+  if (!ptr && disturbed && !reform && simT - lastTouch > REFORM_AFTER && !slump){
+    reform = { t: 0 };
+    touch(pill.cx, pill.cy, Math.max(pill.hw, pill.hh) * 1.7 + 60, 2.5);
+  }
+  if (reform){
+    reform.t += dt;
+    if (reform.t > 1.15){
+      reform = null; disturbed = false; pillIntact = true;
+      reformSound();
+    }
+  }
+
+  for (const g of grains){
+    g.vz -= 1400 * dt;
+    g.x += g.vx * dt; g.y += g.vy * dt; g.z += g.vz * dt;
+    const f = Math.exp(-dt * 1.5); g.vx *= f; g.vy *= f;
+  }
+  for (let i = grains.length - 1; i >= 0; i--) if (grains[i].z <= 0) grains.splice(i, 1);
+}
+
+function simulate(dt){
+  // everything this frame is scissored to one rectangle
+  for (const s of stamps) touch(s.x, s.y, s.r * 1.5 + 40, 2.5);
+  const rect = activeRect();
+  if (!rect && !stamps.length) return false;
+
+  for (const s of stamps){
+    simPass(P.stamp, u => {
+      const surface = BED;
+      gl.uniform4f(u.uTool, s.x, cssH - s.y, s.r, Math.max(surface - s.depth, 2));
+      gl.uniform1f(u.uScatter, s.scatter ? 1 : 0);
+      gl.uniform1f(u.uSeed, Math.random() * 100);
+    }, rect);
+  }
+  stamps.length = 0;
+
+  if (slump){
+    const reach = Math.max(pill.hw, pill.hh) * 2.2;
+    const front = Math.min(1, slump.t / 0.45) * reach;
+    simPass(P.slump, u => {
+      gl.uniform3f(u.uFront, slump.x, cssH - slump.y, front);
+      gl.uniform1f(u.uDecay, Math.exp(-dt * 9));
+    }, rect);
+  }
+  if (reform){
+    // ease in, then press firmly: the last frames land exactly on the mould
+    const t = reform.t, k = t < 0.9 ? 1 - Math.exp(-dt / Math.max(0.5 - t * 0.45, 0.06)) : 1;
+    const region = [pill.hh * 1.1 + 30, 45];
+    simPass(P.target, u => targetUniforms(u, k * Math.min(1, t / 0.25), region), rect);
+  }
+  const fluidDecay = Math.exp(-dt / 1.0 / SLIDE_ITERS);
+  for (let i = 0; i < SLIDE_ITERS; i++){
+    simPass(P.slide, u => {
+      gl.uniform1f(u.uTl, TALUS_LOOSE); gl.uniform1f(u.uTp, TALUS_PACKED); gl.uniform1f(u.uFluidDecay, fluidDecay);
+      gl.uniform1f(u.uMelt, simT < meltUntil ? 1 : 0);
+    }, rect);
+  }
+  syncBuffers(rect);
+  shade(rect);
+  return true;
+}
+
+function shade(rect){
+  gl.bindFramebuffer(gl.FRAMEBUFFER, shadeFb);
+  gl.viewport(0, 0, GW, GH);
+  if (rect){
+    // shadows reach well outside what moved
+    const pad = 60;
+    const r = [Math.max(0, rect[0] - pad), Math.max(0, rect[1] - pad)];
+    r.push(Math.min(GW, rect[0] + rect[2] + pad) - r[0], Math.min(GH, rect[1] + rect[3] + pad) - r[1]);
+    gl.enable(gl.SCISSOR_TEST); gl.scissor(...r);
+  } else gl.disable(gl.SCISSOR_TEST);
+  gl.useProgram(P.shade.p);
+  bindTex(0, sand[cur]); gl.uniform1i(P.shade.u.uSrc, 0);
+  gl.uniform3f(P.shade.u.uSun, ...SUN);
+  gl.bindVertexArray(vao);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+  gl.disable(gl.SCISSOR_TEST);
+}
+
+const grainBuf = gl.createBuffer();
+const grainVao = gl.createVertexArray();
+gl.bindVertexArray(grainVao);
+gl.bindBuffer(gl.ARRAY_BUFFER, grainBuf);
+{
+  const loc = gl.getAttribLocation(P.grain.p, 'aP'), locS = gl.getAttribLocation(P.grain.p, 'aShade');
+  gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, 4, gl.FLOAT, false, 20, 0);
+  gl.enableVertexAttribArray(locS); gl.vertexAttribPointer(locS, 1, gl.FLOAT, false, 20, 16);
+}
+gl.bindVertexArray(null);
+let grainData = new Float32Array(0);
+
+function render(){
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  gl.viewport(0, 0, W, H);
+  gl.disable(gl.SCISSOR_TEST);
+  const c = P.comp;
+  gl.useProgram(c.p);
+  bindTex(0, shadeA); gl.uniform1i(c.u.uN, 0);
+  bindTex(1, shadeB); gl.uniform1i(c.u.uQ, 1);
+  gl.uniform2f(c.u.uGrid, GW, GH);
+  gl.uniform2f(c.u.uCss, cssW, cssH);
+  gl.uniform1f(c.u.uDpr, dpr);
+  gl.uniform3f(c.u.uSun, ...SUN);
+  gl.uniform1f(c.u.uBed, BED);
+  gl.bindVertexArray(vao);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+
+  if (grains.length){
+    if (grainData.length < grains.length * 5) grainData = new Float32Array(grains.length * 10);
+    grains.forEach((g, i) => { grainData.set([g.x, g.y, g.z, g.size, g.shade], i * 5); });
+    gl.bindBuffer(gl.ARRAY_BUFFER, grainBuf);
+    gl.bufferData(gl.ARRAY_BUFFER, grainData.subarray(0, grains.length * 5), gl.DYNAMIC_DRAW);
+    gl.enable(gl.BLEND);
+    gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+    gl.useProgram(P.grain.p);
+    gl.uniform2f(P.grain.u.uCss, cssW, cssH);
+    gl.uniform1f(P.grain.u.uDpr, dpr);
+    gl.uniform2f(P.grain.u.uShadowDir, -SUN[0] * 0.9, SUN[1] * 0.9);
+    gl.bindVertexArray(grainVao);
+    for (const sh of [1, 0]){
+      gl.uniform1f(P.grain.u.uShadow, sh);
+      gl.drawArrays(gl.POINTS, 0, grains.length);
+    }
+    gl.disable(gl.BLEND);
+    gl.bindVertexArray(null);
+  }
+}
+
+let last = performance.now(), manual = false;
+function advance(dt){
+  step(dt);
+  const changed = simulate(dt);
+  if (changed || grains.length || dirty){ render(); dirty = grains.length > 0; }
+}
+function frame(now){
+  if (!manual && !lost){
+    const dt = Math.min((now - last) / 1000, 1 / 30);
+    advance(dt);
+  }
+  last = now;
+  requestAnimationFrame(frame);
+}
+
+let resizeQueued = false;
+function queueResize(){
+  if (resizeQueued) return;
+  resizeQueued = true;
+  requestAnimationFrame(() => { resizeQueued = false; resize(); });
+}
+window.addEventListener('resize', queueResize);
+(function watchDpr(){
+  const mq = matchMedia(`(resolution: ${window.devicePixelRatio}dppx)`);
+  mq.addEventListener('change', () => { queueResize(); watchDpr(); }, { once: true });
+})();
+
+resize();
+requestAnimationFrame(frame);
+
+// hooks for automated testing
+window.__sand = {
+  tap, manual(on){ manual = on; },
+  advance(sec, fps = 60){ const n = Math.round(sec * fps); for (let i = 0; i < n; i++) advance(1 / fps); },
+  // drag along a list of [x, y] points, one step per frame
+  drag(points, fps = 60){
+    ptr = { id: -1, x0: points[0][0], y0: points[0][1], x: points[0][0], y: points[0][1], lx: points[0][0], ly: points[0][1], dragging: true, speed: 0 };
+    for (const [x, y] of points){ ptr.x = x; ptr.y = y; advance(1 / fps); }
+    ptr = null; scrapeLevel(0);
+  },
+  get state(){ return { pillIntact, disturbed, reform: !!reform, slump: !!slump, grains: grains.length }; },
+  heights(x, y){
+    const px = new Float32Array(4);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, sandFb[cur]);
+    gl.readPixels(Math.round(x), Math.round(cssH - y), 1, 1, gl.RGBA, gl.FLOAT, px);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    return Array.from(px);
+  },
+  total(){
+    const px = new Float32Array(GW * GH * 4);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, sandFb[cur]);
+    gl.readPixels(0, 0, GW, GH, gl.RGBA, gl.FLOAT, px);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    let s = 0; for (let i = 0; i < px.length; i += 4) s += px[i];
+    return s;
+  },
+};
+})();
+</script>
+</body>
+</html>
