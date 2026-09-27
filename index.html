@@ -200,7 +200,8 @@ void main(){
   w = max(w * uDecay - (1. - uDecay) * 0.35 * (1. - w), 0.);
   ivec2 hp = ivec2(uv * uHRes);
   vec4 f = texelFetch(uH, hp, 0);
-  float c = smoothstep(3., -6., f.g) * f.b;
+  // a lower wetting weight means a drop just sliding through: its film is thinner and narrower than a resting drop's
+  float c = smoothstep(3., -6., f.g + (1. - f.b) * 16.) * mix(0.45, 1., f.b);
   o = vec4(max(w, c), 0., 0., 1.);
 }`;
 
@@ -659,7 +660,7 @@ function burstDrop(d, ox, oy){
   const k = pill.hh / 55;
   lastBurst = simT;
   const room = MAX_DROPS - drops.length + 1;
-  let n = d.r > 10 * k ? Math.round(rand(4, 7)) : d.r > 5 * k ? Math.round(rand(3, 4)) : 2;
+  let n = d.r > 28 * k ? Math.round(rand(6, 9)) : d.r > 10 * k ? Math.round(rand(4, 7)) : d.r > 5 * k ? Math.round(rand(3, 4)) : 2;
   n = Math.min(n, room);
   // too small to split (or no room left): it just gets flicked away from the finger
   if (d.r < 2.6 * k || n < 2){
@@ -671,21 +672,28 @@ function burstDrop(d, ox, oy){
   }
   const w = Array.from({ length: n }, () => Math.pow(rand(0.35, 1), 2));
   const ws = w.reduce((a, b) => a + b, 0);
-  const energy = Math.sqrt(Math.min(d.r / (10 * k), 2));
   const idx = drops.indexOf(d);
+  // push the whole burst slightly away from the finger
+  const cx = d.x - ox, cy = d.y - oy, cl = Math.hypot(cx, cy) || 1;
+  const a0 = rand(0, TAU);
   const parts = w.map((wi, i) => {
     const vol = d.vol * wi / ws;
     const r = Math.cbrt(vol);
-    const a = (i / n) * TAU + rand(-0.5, 0.5);
-    const off = d.r * rand(0.1, 0.45);
+    // pieces leave in an even ring so neighbours don't land on each other
+    const a = a0 + (i / n) * TAU + rand(-0.25, 0.25) * (TAU / n);
+    const off = d.r * rand(0.25, 0.45);
     const x = d.x + Math.cos(a) * off, y = d.y + Math.sin(a) * off;
-    const ex = x - ox, ey = y - oy, el = Math.hypot(ex, ey) || 1;
-    const mx = Math.cos(a) + ex / el * 0.8, my = Math.sin(a) + ey / el * 0.8;
-    const ang = Math.atan2(my, mx) + rand(-0.3, 0.3);
-    const speed = rand(150, 320) * k * energy * (r < 4 * k ? 1.35 : 1) * (reduceMotion.matches ? 0.35 : 1);
+    const mx = Math.cos(a) + cx / cl * 0.35, my = Math.sin(a) + cy / cl * 0.35;
+    const ml = Math.hypot(mx, my) || 1;
+    const mu = r < 6 * k ? rand(3.2, 5.0) : rand(3.4, 4.6);
+    // with exponential friction a drop slides v/mu, so pick the speed from where it should come to rest:
+    // clear of the parent's footprint and of its own neighbours, however big the parent was
+    const travel = (d.r * rand(1.2, 2.0) + r * 1.2) * (reduceMotion.matches ? 0.5 : 1);
+    const speed = travel * mu;
     return {
-      x, y, r, vol, vx: d.vx * 0.3 + Math.cos(ang) * speed, vy: d.vy * 0.3 + Math.sin(ang) * speed,
-      mu: r < 6 * k ? rand(3.2, 5.5) : rand(4.5, 6.5), into: null, delay: 0, absorbing: false, born: simT,
+      x, y, r, vol, vx: d.vx * 0.2 + mx / ml * speed, vy: d.vy * 0.2 + my / ml * speed,
+      mu, into: null, delay: 0, absorbing: false,
+      born: simT + Math.min(0.1 + d.r / (120 * k), 0.4),   // bigger bursts need longer to separate
     };
   });
   // anything already sliding into this drop now has nothing to merge with
@@ -1044,7 +1052,8 @@ function render(time, dt){
     if (tl > maxT){ tx = d.x + (tx - d.x) * maxT / tl; ty = d.y + (ty - d.y) * maxT / tl; }
     const shrink = 1 / Math.sqrt(1 + Math.min(tl, maxT) / (2 * Math.max(d.r, 0.5)) * 0.8);
     // droplets moving fast are mostly airborne and barely wet the surface they cross
-    const wetting = d.held ? 1 : 1 - Math.min(Math.hypot(d.vx, d.vy) / (160 * pill.hh / 55), 0.85);
+    // flung splash drops are partly airborne; dragged and regrouping drops slide and leave a full trail
+    const wetting = d.held ? 1 : phase === 'reform' ? 0.6 : 1 - Math.min(Math.hypot(d.vx, d.vy) / (160 * pill.hh / 55), 0.85);
     dropBuf[i*4] = toX(d.x); dropBuf[i*4+1] = toY(d.y); dropBuf[i*4+2] = d.r * shrink * dpr; dropBuf[i*4+3] = wetting;
     tailBuf[i*2] = toX(tx); tailBuf[i*2+1] = toY(ty);
   }
