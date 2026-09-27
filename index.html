@@ -135,6 +135,7 @@ uniform float uK;            // smooth-union radius factor
 uniform float uHR;           // height / footprint radius
 uniform float uP;            // superellipse exponent for the cross section
 uniform float uSquash;       // global height multiplier (press)
+uniform vec3 uEdge;          // canvas width, height, contact inset (device px)
 out vec4 o;
 
 float sdCapsule(vec2 p, vec2 a, vec2 b, float r){
@@ -173,6 +174,9 @@ void main(){
     R = mix(D.z, R, hh);
     wetW = mix(D.w, wetW, hh);
   }
+  // the screen edge is a wall: water pressed against it gets a flat contact face
+  float wall = min(min(p.x, uEdge.x - p.x), min(p.y, uEdge.y - p.y)) - uEdge.z;
+  d = max(d, -wall);
   float s = max(-d, 0.);
   float x = clamp(s / max(R, 1e-3), 0., 1.);
   float h = R * uHR * pow(max(1. - pow(1. - x, uP), 0.), 1. / uP);
@@ -624,7 +628,8 @@ function pop(ox = pill.cx, oy = pill.cy){
   // where a drop of radius r holds r^3: the pill (half-cylinder of radius R and length 2L, plus two
   // quarter-sphere caps) holds 1.5 R^2 L + R^3. The spray keeps its size; the larger pieces take the rest.
   const R = pill.hh, Lp = Math.max(pill.hw - pill.hh, 0);
-  const Vpill = 1.5 * R * R * 2 * Lp / 2 + R * R * R;
+  // the splash carries 60% of the pill's geometric volume: at full volume the pieces swamp the screen
+  const Vpill = 0.6 * (1.5 * R * R * Lp + R * R * R);
   const spray = drops.filter(d => d.r < 6 * k), body = drops.filter(d => d.r >= 6 * k);
   const vSpray = spray.reduce((s, d) => s + d.vol, 0), vBody = body.reduce((s, d) => s + d.vol, 0);
   const grow = Math.cbrt(Math.max(Vpill - vSpray, vBody) / vBody);
@@ -797,6 +802,7 @@ function step(dt){
         d.vx += (w * w * (d.grab.x - d.x) - 2 * w * d.vx) * dt;
         d.vy += (w * w * (d.grab.y - d.y) - 2 * w * d.vy) * dt;
         d.x += d.vx * dt; d.y += d.vy * dt;
+        wallContact(d, dt);
         continue;
       }
       const f = Math.exp(-d.mu * dt);
@@ -804,12 +810,7 @@ function step(dt){
       const sp = Math.hypot(d.vx, d.vy);
       if (sp < 22 * (pill.hh / 55)){ d.vx *= Math.exp(-dt * 18); d.vy *= Math.exp(-dt * 18); }
       d.x += d.vx * dt; d.y += d.vy * dt;
-      // the screen edge acts like a lip: drops stop at it instead of sliding out of reach
-      const m = d.r + 4;
-      if (d.x < m){ d.x = m; d.vx = Math.abs(d.vx) * 0.25; }
-      if (d.x > cssW - m){ d.x = cssW - m; d.vx = -Math.abs(d.vx) * 0.25; }
-      if (d.y < m){ d.y = m; d.vy = Math.abs(d.vy) * 0.25; }
-      if (d.y > cssH - m){ d.y = cssH - m; d.vy = -Math.abs(d.vy) * 0.25; }
+      wallContact(d, dt);
     }
     if (phase === 'scatter') mergeDrops(dt);
     for (const g of grabs.values()) resolveGrab(g);
@@ -821,6 +822,40 @@ function step(dt){
   } else if (phase === 'reform'){
     reformStep(dt);
   }
+}
+
+// Water meeting the screen edge. It doesn't bounce: the motion into the wall is absorbed, the drop
+// spreads sideways along the wall as far as it is pushed into it, and a hard hit sets it wobbling.
+// A dragged drop can be pressed into the edge and flattens against it instead of leaving the screen.
+const MAX_PRESS = 0.38;               // deepest squash, as a fraction of the radius
+function wallContact(d, dt){
+  const k = pill.hh / 55, pad = 2;
+  let ex = 0, ey = 0;
+  const walls = [[d.x, 1, 0], [cssW - d.x, -1, 0], [d.y, 0, 1], [cssH - d.y, 0, -1]];
+  for (const [dist, nx, ny] of walls){
+    let pen = d.r + pad - dist;                        // how far the drop's round outline crosses the edge
+    if (pen <= 0) continue;
+    const vn = d.vx * nx + d.vy * ny;                  // < 0: moving into the wall
+    if (vn < 0){
+      d.vx -= vn * nx; d.vy -= vn * ny;
+      // sliding along a wall drags a little
+      const f = Math.exp(-dt * 3);
+      d.vx = d.vx * (nx ? 1 : f); d.vy = d.vy * (ny ? 1 : f);
+      const kick = Math.min(0.2, -vn / (1600 * k));
+      if (kick > 0.03 && (!d.wob || kick > d.wob)){ d.wob = kick; d.wobA = Math.atan2(nx, -ny); d.wobT = 0; }
+    }
+    const maxPen = d.r * MAX_PRESS;
+    if (pen > maxPen){ d.x += (pen - maxPen) * nx; d.y += (pen - maxPen) * ny; pen = maxPen; }
+    // a free drop relaxes back off the wall; a held one stays pressed as long as it is pushed
+    if (!d.held){
+      const back = pen * (1 - Math.exp(-dt * 10));
+      d.x += back * nx; d.y += back * ny; pen -= back;
+    }
+    // the renderer cuts the drop flat at the edge; spreading a little along the wall makes up the lost area
+    const e = pen * 0.9;
+    ex += -ny * e; ey += nx * e;
+  }
+  d.fx = ex; d.fy = ey;
 }
 
 function mergeDrops(dt){
@@ -1098,6 +1133,10 @@ function render(time, dt){
       ex = Math.cos(a) * e; ey = Math.sin(a) * e;
       hx += ex; hy += ey; tx -= ex; ty -= ey;
     }
+    if (d.fx || d.fy){
+      hx += d.fx; hy += d.fy; tx -= d.fx; ty -= d.fy;
+      ex += d.fx; ey += d.fy;
+    }
     const segLen = Math.min(tl, maxT) + 2 * Math.hypot(ex, ey);
     const shrink = 1 / Math.sqrt(1 + segLen / (2 * Math.max(d.r, 0.5)) * 0.8);
     // droplets moving fast are mostly airborne and barely wet the surface they cross
@@ -1113,6 +1152,7 @@ function render(time, dt){
   gl.uniform1f(f.u.uHR, 0.82);
   gl.uniform1f(f.u.uP, 2.0);
   gl.uniform1f(f.u.uSquash, 1 - 0.12 * pill.press);
+  gl.uniform3f(f.u.uEdge, W, H, 1.5 * dpr);
   draw(f, hFb, W, H);
 
   // wet
