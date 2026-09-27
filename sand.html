@@ -55,11 +55,11 @@ canvas.addEventListener('webglcontextrestored', () => location.reload());
 // ---------------------------------------------------------------- tuning (lengths in CSS px)
 const BED = 22;              // depth of the sand bed
 const PILL_H = 30;           // how far the moulded button stands above the bed
-const TEXT_DEPTH = 3.2;      // how deep the letters are pressed in
+const TEXT_DEPTH = 2.8;      // how deep the letters are pressed in
 const TALUS_LOOSE = 0.75;    // tan of the angle of repose (~37 deg) for loose sand
 const TALUS_PACKED = 40;     // packed, moulded sand holds any wall
-const FINGER_R = 10;         // plough fingertip radius
-const FINGER_DEPTH = 13;     // how far below the bed surface the fingertip reaches
+const FINGER_R = 10;         // plough fingertip radius at full size (scaled down with the button)
+const FINGER_DEPTH = 1.2;    // how deep the fingertip presses, in fingertip radii
 const SLIDE_ITERS = 20;      // avalanche relaxation steps per frame
 const REFORM_AFTER = 2.5;    // seconds of quiet before the mould presses the button back
 
@@ -93,26 +93,54 @@ uniform vec4 uPill;       // cx, cy, halfW, halfH
 uniform vec2 uRegion;     // reach beyond the pill outline, feather; reach <= 0 means everywhere
 uniform float uAmt;
 uniform float uBed, uPillH, uTextDepth;
+uniform float uSoft;      // 0 = crisp moulded shoulders, 1 = sand only gathered into a rough mound
+uniform float uLetters;   // how far the letters have been punched in
+uniform float uLip;       // flash squeezed out at the rim while the mould presses
 out vec4 o;
+// sparse crumbs of damp sand lying on the bed: tiny domes that catch the raking light
+float crumbs(vec2 p){
+  vec2 cell = floor(p / 16.);
+  float acc = 0.;
+  for (int j = -1; j <= 1; j++) for (int i = -1; i <= 1; i++){
+    vec2 c = cell + vec2(i, j);
+    if (hash12(c + 9.1) < 0.86) continue;
+    vec2 ctr = (c + 0.15 + 0.7 * hash22(c)) * 16.;
+    float r = 2.5 + 4.5 * hash12(c + 3.3);
+    float d = length(p - ctr) / r;
+    acc += (0.25 + 0.45 * hash12(c + 5.7)) * max(0., 1. - d * d);
+  }
+  return acc;
+}
+float bedAt(vec2 p){
+  // broad undulation, faint smoothing strokes, fine texture, crumbs
+  float strokes = vnoise(vec2(p.x * 0.004 + p.y * 0.03, p.y * 0.004 - p.x * 0.01)) - 0.5;
+  return uBed + 2.2 * (fbm(p * 0.009) - 0.5) + 0.8 * strokes + 0.5 * (fbm(p * 0.06 + 7.) - 0.5) + crumbs(p);
+}
 void main(){
   vec2 p = gl_FragCoord.xy;
   vec4 cur = texelFetch(uSrc, ivec2(p), 0);
   vec2 q = p - uPill.xy;
   float r = uPill.w, L = max(uPill.z - r, 0.);
   float sd = length(vec2(max(abs(q.x) - L, 0.), q.y)) - r;
-  // moulded shoulder: a rounded edge a few px wide, then a gently domed top
-  float x = clamp(-sd / 7.0, 0., 1.);
-  float shoulder = sqrt(1. - (1. - x) * (1. - x));
+  // a real mould edge is never perfect: a little wander and the odd chip
+  float sdEdge = sd + 1.6 * (vnoise(p * 0.22) - 0.5) + 1.8 * smoothstep(0.72, 0.9, vnoise(p * 0.11 + 3.));
+  float sw = mix(6.0, 42.0, uSoft);
+  float x = clamp(-sdEdge / sw, 0., 1.);
+  float crisp = sqrt(1. - (1. - x) * (1. - x));
+  float shoulder = mix(crisp, smoothstep(0., 1., x), uSoft);
   vec2 qn = q / uPill.zw;
-  float dome = 1.0 + 0.07 * (1. - clamp(dot(qn, qn), 0., 1.));
-  float bed = uBed + 0.7 * (fbm(p * 0.018) - 0.5) + 0.25 * (vnoise(p * 0.21) - 0.5);
+  float dome = 1.0 + 0.025 * (1. - clamp(dot(qn, qn), 0., 1.));
   float txt = texture(uText, q / (uPill.zw * 2.) + 0.5).r;
-  float h = bed + uPillH * shoulder * dome - uTextDepth * txt * x;
-  float packed = smoothstep(0.0, 0.25, x);
+  float letters = uTextDepth * uLetters * txt * step(0.999, x);
+  float lip = uLip * 3.0 * exp(-pow((sd - 5.) / 3.5, 2.));
+  float inPill = smoothstep(2., -6., sd);
+  float h = bedAt(p) - crumbs(p) * inPill + uPillH * (1. - 0.25 * uSoft) * shoulder * dome - letters + lip;
+  float inside = smoothstep(0.0, 0.25, clamp(-sd / 6., 0., 1.));
+  float packed = inside * (1. - uSoft);
   float w = 1.;
   if (uRegion.x > 0.) w = 1. - smoothstep(uRegion.x - uRegion.y, uRegion.x, sd);
   float a = clamp(uAmt * w, 0., 1.);
-  o = vec4(mix(cur.r, h, a), mix(cur.g, packed, a), cur.b * (1. - a), mix(cur.a, packed, a));
+  o = vec4(mix(cur.r, h, a), mix(cur.g, packed, a), cur.b * (1. - a), mix(cur.a, max(inside, lip > 0.3 ? 1. : 0.), a));
 }`;
 
 // A fingertip pressed into the sand. Sand inside the tip is pushed out and piled just outside it:
@@ -120,8 +148,8 @@ void main(){
 // to disc radius t preserves area, so every bit of sand removed lands in the ring exactly once.
 const FS_STAMP = COMMON + `
 uniform sampler2D uSrc;
-uniform vec4 uTool;       // cx, cy, radius, lowest point of the tip
-uniform float uScatter;   // > 0: throw the sand unevenly, for craters
+uniform vec4 uTool;       // cx, cy, radius, depth below the local surface
+uniform float uCrater;    // 1: conical crater with a wide, uneven ejecta ring
 uniform float uSeed;
 out vec4 o;
 float hAt(vec2 p){
@@ -134,24 +162,47 @@ float hAt(vec2 p){
   float h11 = texelFetch(uSrc, clamp(a + ivec2(1,1), ivec2(0), m), 0).r;
   return mix(mix(h00, h10, t.x), mix(h01, h11, t.x), t.y);
 }
-float tipAt(float t){ float r = uTool.z; return uTool.w + r - sqrt(max(r*r - t*t, 0.)); }
+float low;                // lowest point of the tip
+float tipAt(float t){
+  float r = uTool.z;
+  // crater: flat floor, walls at the angle of repose. finger: a rounded tip.
+  if (uCrater > 0.5) return low + max(t - r * 0.4, 0.) * 0.8;
+  return low + r - sqrt(max(r*r - t*t, 0.));
+}
 void main(){
   vec2 p = gl_FragCoord.xy;
   vec4 c = texelFetch(uSrc, ivec2(p), 0);
-  vec2 d = p - uTool.xy;
-  float s = length(d), r = uTool.z;
+  vec2 C = uTool.xy;
+  float r = uTool.z;
+  // The tip presses a fixed depth into whatever surface is there: the bed, a ridge, or the top of
+  // the button. Every fragment averages the same 8 points around the tip, so they agree on it.
+  float ref = 0.;
+  for (int k = 0; k < 8; k++){ float a = float(k) * 0.7853982; ref += hAt(C + vec2(cos(a), sin(a)) * r * 1.7); }
+  low = max(ref / 8. - uTool.w, 1.0);
+  // Sand from the disc is spread over the ring a..b. t^2 = r^2 (s^2 - a^2) / (b^2 - a^2) maps ring
+  // radius s to disc radius t with a uniform Jacobian r^2 / (b^2 - a^2), so scaling each deposit by
+  // that factor puts every bit of removed sand somewhere in the ring exactly once.
+  float a = r, b = r * (uCrater > 0.5 ? 2.0 : 1.55);
+  vec2 d = p - C;
+  float s = length(d);
   if (s < r){
-    c.r = min(c.r, tipAt(s));
-  } else if (s < r * 1.41421356){
-    float t = sqrt(max(s*s - r*r, 0.));
-    vec2 q = uTool.xy + d / max(s, 1e-4) * t;
-    float ex = max(hAt(q) - tipAt(t), 0.);
-    if (uScatter > 0.) ex *= 0.35 + 1.3 * hash12(floor(p * 0.5) + uSeed);
+    float nh = min(c.r, tipAt(s));
+    if (nh < c.r - 0.05) c.a = max(c.a, 0.35);       // exposed sand from below the surface is damper
+    c.r = nh;
+  } else if (s < b){
+    float t = r * sqrt(max((s*s - a*a) / (b*b - a*a), 0.));
+    vec2 q = C + d / max(s, 1e-4) * t;
+    float ex = max(hAt(q) - tipAt(t), 0.) * (r*r) / (b*b - a*a);
+    // uneven throw; the mean of the noise is 1 so the volume is kept on average
+    float n = hash12(floor(p * (uCrater > 0.5 ? 0.35 : 0.6)) + uSeed);
+    ex *= uCrater > 0.5 ? 0.3 + 1.4 * n : 0.8 + 0.4 * n;
     float mq = texelFetch(uSrc, clamp(ivec2(q), ivec2(0), textureSize(uSrc, 0) - 1), 0).a;
-    c.a = (c.a * c.r + mq * ex) / max(c.r + ex, 1e-3);
+    c.a = mix(c.a, mq, clamp(ex / 1.5, 0., 1.));    // the landed layer shows its own colour
     c.r += ex;
     c.g = mix(c.g, 0., clamp(ex * 2., 0., 1.));     // pushed-out sand is loose
   }
+  // moulded sand broken next to a cut crumbles instead of standing as a wall
+  c.g *= mix(0.2, 1.0, smoothstep(r * 0.9, r * 1.8, s));
   o = c;
 }`;
 
@@ -162,17 +213,18 @@ const FS_SLIDE = COMMON + `
 uniform sampler2D uSrc;
 uniform float uTl, uTp, uFluidDecay;
 uniform float uMelt;      // 0 unless something is slumping
+uniform float uSeed;      // reshuffles each cell's angle of repose now and then, for irregular slides
 out vec4 o;
 float talus(vec4 c, ivec2 cell){
-  float n = hash12(vec2(cell));
-  float loose = uTl * (0.85 + 0.3 * n) * (1. - 0.9 * c.b);
-  return mix(loose, uTp, c.g);
+  float n = hash12(vec2(cell) + uSeed);
+  float loose = uTl * (0.82 + 0.36 * n) * (1. - 0.9 * c.b);
+  return mix(loose, uTp, c.g * c.g * c.g);
 }
 void main(){
   ivec2 ip = ivec2(gl_FragCoord.xy);
   ivec2 m = textureSize(uSrc, 0) - 1;
   vec4 c = texelFetch(uSrc, ip, 0);
-  float dh = 0., dm = 0.;
+  float dh = 0., inH = 0., inM = 0.;
   for (int k = 0; k < 8; k++){
     ivec2 off = k == 0 ? ivec2(1,0) : k == 1 ? ivec2(-1,0) : k == 2 ? ivec2(0,1) : k == 3 ? ivec2(0,-1)
               : k == 4 ? ivec2(1,1) : k == 5 ? ivec2(-1,-1) : k == 6 ? ivec2(1,-1) : ivec2(-1,1);
@@ -186,14 +238,14 @@ void main(){
     float T = talus(upN ? n : c, upN ? jp : ip) * dist;
     float flux = coef * sign(diff) * max(abs(diff) - T, 0.);
     dh += flux;
-    dm += flux * (upN ? n.a : c.a);          // sand carries the moisture of the cell it left
+    if (flux > 0.){ inH += flux; inM += flux * n.a; }
   }
   // Kinetic sand that has lost its mould sags like a very thick liquid: height spreads out over a few
   // px per step. Pairwise with a symmetric coefficient (mean fluidity of the pair), so still conserved.
   if (uMelt > 0. && c.b > 0.001){
     for (int ring = 0; ring < 2; ring++){
       float R = ring == 0 ? 3. : 7.;
-      float kc = ring == 0 ? 0.028 : 0.017;
+      float kc = ring == 0 ? 0.014 : 0.007;
       for (int k = 0; k < 8; k++){
         float a = float(k) * 0.7853982 + float(ring) * 0.3926991;
         ivec2 jp = ip + ivec2(round(vec2(cos(a), sin(a)) * R));
@@ -201,30 +253,49 @@ void main(){
         vec4 n = texelFetch(uSrc, jp, 0);
         float fl = kc * uMelt * 0.5 * (c.b + n.b) * (n.r - c.r);
         dh += fl;
-        dm += fl * (fl > 0. ? n.a : c.a);
+        if (fl > 0.){ inH += fl; inM += fl * n.a; }
       }
     }
   }
-  float h = c.r + dh;
-  float wet = h > 1e-3 ? clamp((c.a * c.r + dm) / h, 0., 1.) : c.a;
-  o = vec4(h, c.g, c.b * uFluidDecay, wet);
+  // moisture is a surface property: sand arriving on top shows through once it forms a layer,
+  // however deep the dry bed underneath is
+  float wet = inH > 0. ? mix(c.a, inM / inH, clamp(inH / 1.5, 0., 1.)) : c.a;
+  o = vec4(c.r + dh, c.g, c.b * uFluidDecay, wet);
 }`;
 
 // Breaking the mould: packing is lost inside a growing circle, and that sand briefly flows.
 const FS_SLUMP = COMMON + `
 uniform sampler2D uSrc;
-uniform vec3 uFront;      // cx, cy, radius
+uniform vec2 uFrom;       // where it was struck
+uniform float uT;         // seconds since
+uniform float uSpeed;     // how fast the failure travels (px/s)
 uniform float uDecay;
 out vec4 o;
 void main(){
   vec2 p = gl_FragCoord.xy;
   vec4 c = texelFetch(uSrc, ivec2(p), 0);
-  float inside = 1. - smoothstep(uFront.z - 18., uFront.z, length(p - uFront.xy));
-  float lost = c.g * (1. - mix(1., uDecay, inside));
+  if (c.g < 0.001){ o = c; return; }
+  // The block cracks into slabs (a Voronoi network ~22 px across). Cracks open as the failure passes;
+  // each slab then gives way after its own delay, so it breaks up instead of melting evenly.
+  vec2 g = p / 22.;
+  vec2 gi = floor(g);
+  float d1 = 9., d2 = 9.; vec2 id = gi;
+  for (int j = -1; j <= 1; j++) for (int i = -1; i <= 1; i++){
+    vec2 cc = gi + vec2(i, j);
+    vec2 fp = cc + 0.15 + 0.7 * hash22(cc);
+    float d = length(g - fp);
+    if (d < d1){ d2 = d1; d1 = d; id = cc; } else if (d < d2) d2 = d;
+  }
+  float border = (d2 - d1) * 22.;                 // ~distance to the nearest crack, px
+  float seam = 1. - smoothstep(1.2, 3.2, border);
+  float arrive = length(p - uFrom) / uSpeed;
+  float delay = mix(0.08 + 0.75 * hash12(id + 4.2), 0., seam);
+  if (uT < arrive + delay){ o = c; return; }
+  // cracks lose all cohesion; each slab keeps a little of its own, so it slumps as lumps
+  float keep = mix(0.18 + 0.32 * hash12(id + 7.7), 0., seam);
+  float lost = max(c.g - keep, 0.) * (1. - uDecay);
   c.g -= lost;
-  // it gives way in clumps: fluidity is patchy, so the block sags unevenly instead of melting smoothly
-  float clumps = 0.35 + 0.65 * smoothstep(0.25, 0.75, vnoise(p * 0.09) * 0.7 + vnoise(p * 0.3) * 0.3);
-  c.b = max(c.b, min(1., lost * 3. * clumps));
+  c.b = max(c.b, min(1., lost * mix(1.3, 3.5, seam)));
   o = c;
 }`;
 
@@ -248,27 +319,34 @@ uniform vec3 uSun;        // direction to the sun (x right, y up, z out of the s
 layout(location = 0) out vec4 o0;
 layout(location = 1) out vec4 o1;
 float H(ivec2 p){ return texelFetch(uSrc, clamp(p, ivec2(0), textureSize(uSrc, 0) - 1), 0).r; }
+float Hb(vec2 p){
+  vec2 f = p - 0.5; vec2 i = floor(f); vec2 t = f - i; ivec2 a = ivec2(i);
+  return mix(mix(H(a), H(a + ivec2(1,0)), t.x), mix(H(a + ivec2(0,1)), H(a + ivec2(1,1)), t.x), t.y);
+}
 void main(){
   ivec2 ip = ivec2(gl_FragCoord.xy);
+  vec2 pc = vec2(ip) + 0.5;
   vec4 c = texelFetch(uSrc, ip, 0);
   float gx = (H(ip + ivec2(1,0)) - H(ip - ivec2(1,0))) * 0.5;
   float gy = (H(ip + ivec2(0,1)) - H(ip - ivec2(0,1))) * 0.5;
   vec2 sd = normalize(uSun.xy);
   float rise = uSun.z / length(uSun.xy);
+  // march toward the sun on the filtered height, jittered per cell so small ledges don't band
+  float j = hash12(vec2(ip));
   float lit = 1.;
-  for (int i = 1; i <= 26; i++){
-    float t = float(i) * float(i) * 0.12 + float(i) * 1.2;
-    float hs = H(ivec2(vec2(ip) + 0.5 + sd * t));
-    float above = hs - (c.r + t * rise);
-    lit = min(lit, clamp(1. - above / (0.9 + t * 0.09), 0., 1.));
+  for (int i = 0; i < 28; i++){
+    float fi = float(i) + j;
+    float t = 0.8 + fi * 1.1 + fi * fi * 0.05;
+    float above = Hb(pc + sd * t) - (c.r + t * rise);
+    lit = min(lit, clamp(1. - above / (0.7 + t * 0.02), 0., 1.));
   }
   float occ = 0.;
   for (int i = 0; i < 8; i++){
     float a = float(i) * 0.785398;
     vec2 dir = vec2(cos(a), sin(a));
-    occ += max(H(ivec2(vec2(ip) + dir * 4.)) - c.r, 0.) * 0.6 + max(H(ivec2(vec2(ip) + dir * 11.)) - c.r, 0.) * 0.25;
+    occ += max(Hb(pc + dir * 5.) - c.r, 0.) * 0.45 + max(Hb(pc + dir * 12.) - c.r, 0.) * 0.2;
   }
-  float ao = clamp(1. - occ / 8. * 0.16, 0.35, 1.);
+  float ao = clamp(1. - occ / 8. * 0.14, 0.62, 1.);
   o0 = vec4(-gx, -gy, lit, ao);
   o1 = vec4(c.g, c.r, c.a, 1.);
 }`;
@@ -292,37 +370,41 @@ void main(){
   float h = Q.y;
   float wet = clamp(Q.z, 0., 1.);
 
-  // grains: every device pixel is a grain or two, with its own tilt and tint
-  vec2 gcell = floor(fp);
+  // Grains live in the sand's own space (two per CSS px, whatever the display), and are reseeded as
+  // the surface height changes, so moving sand visibly turns over instead of sliding under a fixed pattern.
+  vec2 gp = css * 2.0;
+  vec2 gcell = floor(gp) + floor(h * 1.3) * vec2(17.13, 7.71);
+  float g0 = hash12(gcell), g1 = hash12(gcell + vec2(1., -1.));
   vec2 gr = hash22(gcell) - 0.5;
-  float gt = hash12(gcell + 17.3);
   float clump = vnoise(css * 0.7) - 0.5;
   float clump2 = vnoise(css * 2.3 + 5.1) - 0.5;
-  float rough = mix(1.0, 0.6, max(packed, wet * 0.6));
-  vec3 n = normalize(vec3(N.xy + gr * 0.32 * rough + (clump * vec2(0.22, -0.18) + clump2 * vec2(-0.1, 0.12)) * rough, 1.));
+  float rough = mix(1.0, 0.85, max(packed, wet));
+  // each grain is a tiny bump: tilt from its own hash, and a darker lower-right flank against its neighbour
+  vec3 n = normalize(vec3(N.xy + (gr * 0.36 + vec2(g0 - g1) * 0.18) * rough + (clump * vec2(0.2, -0.16) + clump2 * vec2(-0.1, 0.12)) * rough, 1.));
 
-  // damp packed sand is darker and richer than the dry, loose sand that gets pushed around
-  vec3 dry = vec3(0.86, 0.74, 0.56);
-  vec3 damp = vec3(0.60, 0.46, 0.31);
-  vec3 alb = mix(dry, damp, wet * 0.9);
-  alb *= 0.94 + 0.12 * gt + 0.06 * clump;
-  alb = mix(alb, alb * 0.45, step(0.975, gt));                         // dark mineral grains
-  alb = mix(alb, vec3(0.97, 0.95, 0.9), step(0.992, hash12(gcell + 3.1)) * (1. - wet * 0.7));  // quartz
-  // sand scooped from deep in the bed is a touch damper than the sun-dried surface
-  alb *= 1.0 - 0.18 * smoothstep(uBed - 2., uBed - 12., h) * (1. - wet);
+  vec3 dry = vec3(0.84, 0.71, 0.53);
+  vec3 damp = vec3(0.49, 0.41, 0.32);
+  vec3 alb = mix(dry, damp, wet * 0.92);
+  alb *= 0.96 + 0.08 * g0 + 0.05 * clump;
+  alb = mix(alb, alb * 0.7, step(0.995, g0));                                 // dark mineral grains
+  alb = mix(alb, vec3(0.96, 0.94, 0.9), step(0.997, hash12(gcell + 3.1)) * (1. - wet * 0.7));  // quartz
 
   vec3 L = normalize(uSun);
   float dif = max(dot(n, L), 0.) * N.z;
-  vec3 sun = vec3(1.0, 0.92, 0.80) * 1.12;
-  vec3 sky = vec3(0.56, 0.62, 0.74) * 0.62;
-  vec3 col = alb * (sun * dif + sky * N.w * (0.55 + 0.45 * n.z));
-  // the odd grain catches the sun
+  vec3 sun = vec3(1.0, 0.91, 0.78) * 1.0;
+  vec3 sky = vec3(0.60, 0.64, 0.76) * 0.6;
+  // shadowed sand still gets warm light bounced off the sunlit sand around it
+  vec3 bounce = vec3(0.95, 0.80, 0.60) * 0.12;
+  vec3 col = alb * (sun * dif + (sky * (0.55 + 0.45 * n.z) + bounce) * N.w);
+  // damp sand has a faint satin sheen
   vec3 hv = normalize(L + vec3(0., 0., 1.));
-  float glint = pow(max(dot(n, hv), 0.), 60.) * step(0.985, hash12(gcell + 9.7)) * N.z;
-  col += vec3(1.0, 0.95, 0.85) * glint * 0.9;
+  col += vec3(1.0, 0.95, 0.88) * wet * 0.06 * pow(max(dot(n, hv), 0.), 12.) * N.z;
+  // the odd dry grain catches the sun
+  float glint = pow(max(dot(n, hv), 0.), 60.) * step(0.992, hash12(gcell + 9.7)) * N.z * (1. - wet);
+  col += vec3(1.0, 0.95, 0.85) * glint * 0.8;
 
   vec2 vu = css / uCss - 0.5;
-  col *= 1.0 - 0.18 * smoothstep(0.35, 0.85, length(vu * vec2(1.1, 1.0)));
+  col *= 1.0 - 0.16 * smoothstep(0.35, 0.85, length(vu * vec2(1.1, 1.0)));
   col = pow(col, vec3(0.95));
   col += (hash12(fp + 0.37) - 0.5) / 255.;
   o = vec4(col, 1.);
@@ -477,7 +559,7 @@ function buildText(){
   const fs = pill.hh * 0.5 * 2;
   x.font = `700 ${fs}px -apple-system, BlinkMacSystemFont, "SF Pro Display", Inter, "Segoe UI", system-ui, sans-serif`;
   x.textAlign = 'center'; x.textBaseline = 'middle';
-  x.filter = 'blur(1.2px)';
+  x.filter = 'blur(1.8px)';                     // soft letter walls, not a font-perfect step
   x.fillStyle = '#fff';
   x.fillText('Button', c.width / 2, c.height / 2 + fs * 0.04);
   gl.bindTexture(gl.TEXTURE_2D, textTex);
@@ -490,12 +572,13 @@ function buildText(){
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
 }
 
-function targetUniforms(u, amt, region){
+function targetUniforms(u, amt, region, soft = 0, letters = 1, lip = 0){
   bindTex(1, textTex); gl.uniform1i(u.uText, 1);
   gl.uniform4f(u.uPill, pill.cx, cssH - pill.cy, pill.hw, pill.hh);
   gl.uniform2f(u.uRegion, ...(region || [-1, 1]));
   gl.uniform1f(u.uAmt, amt);
   gl.uniform1f(u.uBed, BED); gl.uniform1f(u.uPillH, PILL_H); gl.uniform1f(u.uTextDepth, TEXT_DEPTH);
+  gl.uniform1f(u.uSoft, soft); gl.uniform1f(u.uLetters, letters); gl.uniform1f(u.uLip, lip);
 }
 
 function resize(){
@@ -618,7 +701,8 @@ let pillIntact = true;       // the moulded button is untouched
 let disturbed = false;       // something near the button needs the mould
 let lastTouch = -10;
 let slump = null;            // { x, y, t } breaking the mould outward from a point
-let meltUntil = -1;          // long-range spreading runs while slumped sand is still fluid
+let meltUntil = -1;
+let talusSeed = 0;          // long-range spreading runs while slumped sand is still fluid
 let reform = null;           // { t }
 const stamps = [];           // pending fingertip presses (CSS px)
 const grains = [];           // airborne grains
@@ -629,6 +713,7 @@ function pillSdf(x, y){
   const L = Math.max(pill.hw - pill.hh, 0);
   return Math.hypot(Math.max(Math.abs(x - pill.cx) - L, 0), y - pill.cy) - pill.hh;
 }
+function fingerR(){ return Math.max(6, Math.min(FINGER_R, pill.hh * 0.15)); }
 function nearPill(x, y, r){ return pillSdf(x, y) < Math.max(pill.hw, pill.hh) * 0.6 + r; }
 function noteTouch(x, y, r){
   lastTouch = simT;
@@ -647,12 +732,15 @@ function startSlump(x, y){
 
 function crater(x, y){
   noteTouch(x, y, 20);
-  stamps.push({ x, y, r: 21, depth: 15, scatter: true });
+  const r = fingerR() * 1.9;
+  stamps.push({ x, y, r, depth: r * 0.6, crater: true });
   craterSound();
-  for (let i = 0; i < 110; i++){
-    const a = rand(0, Math.PI * 2), sp = rand(40, 230);
-    grains.push({ x: x + Math.cos(a) * rand(4, 14), y: y + Math.sin(a) * rand(4, 14), z: rand(1, 6),
-      vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, vz: rand(90, 320), size: rand(1.2, 2.6), shade: Math.random() });
+  // mostly fine spray thrown outward and low, with a few crumbs
+  for (let i = 0; i < 140; i++){
+    const a = rand(0, Math.PI * 2), sp = rand(70, 320);
+    const crumb = Math.random() < 0.12;
+    grains.push({ x: x + Math.cos(a) * rand(3, r * 0.8), y: y + Math.sin(a) * rand(3, r * 0.8), z: rand(1, 4),
+      vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, vz: rand(60, 200), size: crumb ? rand(2.2, 3.2) : rand(0.8, 1.7), shade: Math.random() });
   }
   dirty = true;
 }
@@ -705,18 +793,19 @@ function plough(dt){
   ptr.speed += ((dist / Math.max(dt, 1e-3)) - ptr.speed) * Math.min(1, dt * 12);
   scrapeLevel(ptr.speed);
   if (dist < 0.5) return;
-  const n = Math.min(40, Math.ceil(dist / (FINGER_R * 0.3)));
+  const fr = fingerR();
+  const n = Math.min(40, Math.ceil(dist / (fr * 0.3)));
   for (let i = 1; i <= n; i++){
     const x = ptr.lx + dx * i / n, y = ptr.ly + dy * i / n;
-    stamps.push({ x, y, r: FINGER_R, depth: FINGER_DEPTH, scatter: false });
+    stamps.push({ x, y, r: fr * rand(0.92, 1.08), depth: fr * FINGER_DEPTH * rand(0.88, 1.12), crater: false });
   }
-  noteTouch(ptr.x, ptr.y, FINGER_R);
+  noteTouch(ptr.x, ptr.y, fr);
   // a fast finger flicks a few grains ahead of it
   if (ptr.speed > 350 && Math.random() < dt * 30){
     const ux = dx / dist, uy = dy / dist;
     for (let i = 0; i < 3; i++){
       const a = Math.atan2(uy, ux) + rand(-0.9, 0.9), sp = rand(60, 160);
-      grains.push({ x: ptr.x + ux * FINGER_R, y: ptr.y + uy * FINGER_R, z: rand(1, 4), vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, vz: rand(60, 160), size: rand(1.1, 2), shade: Math.random() });
+      grains.push({ x: ptr.x + ux * fr, y: ptr.y + uy * fr, z: rand(1, 4), vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, vz: rand(60, 160), size: rand(1.1, 2), shade: Math.random() });
     }
   }
   ptr.lx = ptr.x; ptr.ly = ptr.y;
@@ -731,7 +820,7 @@ function step(dt){
 
   if (slump){
     slump.t += dt;
-    if (slump.t > 0.8) slump = null;
+    if (slump.t > 1.8) slump = null;
   }
   if (!ptr && disturbed && !reform && simT - lastTouch > REFORM_AFTER && !slump){
     reform = { t: 0 };
@@ -739,7 +828,7 @@ function step(dt){
   }
   if (reform){
     reform.t += dt;
-    if (reform.t > 1.15){
+    if (reform.t > 1.0){
       reform = null; disturbed = false; pillIntact = true;
       reformSound();
     }
@@ -755,39 +844,46 @@ function step(dt){
 
 function simulate(dt){
   // everything this frame is scissored to one rectangle
-  for (const s of stamps) touch(s.x, s.y, s.r * 1.5 + 40, 2.5);
+  for (const s of stamps) touch(s.x, s.y, s.r * 2 + 40, 2.5);
   const rect = activeRect();
   if (!rect && !stamps.length) return false;
 
   for (const s of stamps){
     simPass(P.stamp, u => {
-      const surface = BED;
-      gl.uniform4f(u.uTool, s.x, cssH - s.y, s.r, Math.max(surface - s.depth, 2));
-      gl.uniform1f(u.uScatter, s.scatter ? 1 : 0);
+      gl.uniform4f(u.uTool, s.x, cssH - s.y, s.r, s.depth);
+      gl.uniform1f(u.uCrater, s.crater ? 1 : 0);
       gl.uniform1f(u.uSeed, Math.random() * 100);
     }, rect);
   }
   stamps.length = 0;
 
   if (slump){
-    const reach = Math.max(pill.hw, pill.hh) * 2.2;
-    const front = Math.min(1, slump.t / 0.45) * reach;
     simPass(P.slump, u => {
-      gl.uniform3f(u.uFront, slump.x, cssH - slump.y, front);
-      gl.uniform1f(u.uDecay, Math.exp(-dt * 9));
+      gl.uniform2f(u.uFrom, slump.x, cssH - slump.y);
+      gl.uniform1f(u.uT, slump.t);
+      gl.uniform1f(u.uSpeed, Math.max(pill.hw, pill.hh) * 4.5);
+      gl.uniform1f(u.uDecay, Math.exp(-dt * 7));
     }, rect);
   }
   if (reform){
-    // ease in, then press firmly: the last frames land exactly on the mould
-    const t = reform.t, k = t < 0.9 ? 1 - Math.exp(-dt / Math.max(0.5 - t * 0.45, 0.06)) : 1;
-    const region = [pill.hh * 1.1 + 30, 45];
-    simPass(P.target, u => targetUniforms(u, k * Math.min(1, t / 0.25), region), rect);
+    // 1. the loose sand is drawn together into a rough mound
+    // 2. the mould comes down: shoulders sharpen and a lip of sand squeezes out at the rim
+    // 3. the letters are punched in last; the lip is left to crumble
+    const t = reform.t, region = [pill.hh * 1.1 + 30, 45];
+    const ease = v => v * v * (3 - 2 * v);
+    let amt, soft, letters, lip;
+    if (t < 0.55){ amt = (1 - Math.exp(-dt / 0.2)) * Math.min(1, t / 0.2); soft = 1; letters = 0; lip = 0; }
+    else if (t < 0.85){ const u = (t - 0.55) / 0.3; amt = 1 - Math.exp(-dt / 0.04); soft = 1 - ease(u); letters = 0; lip = Math.sin(Math.PI * u); }
+    else { const u = Math.min(1, (t - 0.85) / 0.12); amt = 1; soft = 0; letters = ease(u); lip = 0; }
+    simPass(P.target, u => targetUniforms(u, amt, region, soft, letters, lip), rect);
   }
   const fluidDecay = Math.exp(-dt / 1.0 / SLIDE_ITERS);
+  if (Math.random() < dt * 4) talusSeed = Math.random() * 1000;
   for (let i = 0; i < SLIDE_ITERS; i++){
     simPass(P.slide, u => {
       gl.uniform1f(u.uTl, TALUS_LOOSE); gl.uniform1f(u.uTp, TALUS_PACKED); gl.uniform1f(u.uFluidDecay, fluidDecay);
       gl.uniform1f(u.uMelt, simT < meltUntil ? 1 : 0);
+      gl.uniform1f(u.uSeed, talusSeed);
     }, rect);
   }
   syncBuffers(rect);
