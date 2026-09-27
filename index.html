@@ -769,6 +769,12 @@ function spring(x, v, target, k, c, dt){
 
 function step(dt){
   phaseT += dt; simT += dt;
+  for (const d of drops){
+    if (!d.wob) continue;
+    d.wobT += dt;
+    d.wob *= Math.exp(-dt / 0.28);
+    if (d.wob < 0.004) d.wob = 0;
+  }
 
   // pill springs
   [pill.sx, pill.sxV] = spring(pill.sx, pill.sxV, 1 + 0.05 * pill.press, 420, 13, dt);
@@ -833,20 +839,38 @@ function mergeDrops(dt){
       }
     }
   }
-  // a coalescing drop slides into its partner and hands over its volume and momentum
+  // Coalescence: both drops draw together toward their shared centre of mass while the neck between
+  // them widens and the smaller one drains into the larger. Bigger drops take longer (capillary
+  // time grows with size), and the merged drop is left wobbling along the axis they joined on.
+  const k = pill.hh / 55;
   for (const d of drops){
     let t = d.into;
     while (t && t.into) t = t.into;
     if (!t || t.dead){ d.into = null; continue; }
+    if (d.into !== t || d.mergeT === undefined){ d.mergeT = 0; d.vol0 = d.vol; }
     d.into = t;
-    const k = 1 - Math.exp(-dt * 28);
-    d.x += (t.x - d.x) * k; d.y += (t.y - d.y) * k;
-    const m = d.vol * (1 - Math.exp(-dt * 22)) + 0.2;
-    const mv = Math.min(m, d.vol);
+    d.mergeT += dt;
+    const tau = 0.05 + 0.0032 * (t.r + d.r) / k;
+    // the neck starts thin, so draining starts slow and speeds up
+    const ramp = Math.min(1, d.mergeT / (tau * 1.5));
+    const pull = 1 - Math.exp(-dt / tau);
+    const M = t.vol + d.vol;
+    const cx = (t.x * t.vol + d.x * d.vol) / M, cy = (t.y * t.vol + d.y * d.vol) / M;
+    const angle = Math.atan2(d.y - t.y, d.x - t.x);
+    d.x += (cx - d.x) * pull; d.y += (cy - d.y) * pull;
+    if (!t.held){ t.x += (cx - t.x) * pull * 0.8; t.y += (cy - t.y) * pull * 0.8; }
+    // exponential drain, floored so the last of it doesn't linger: done within ~3 tau
+    const mv = Math.min(Math.max(d.vol * (1 - Math.exp(-dt * ramp / tau)), d.vol0 * dt / (3 * tau) * ramp), d.vol);
     t.vx = (t.vx * t.vol + d.vx * mv) / (t.vol + mv);
     t.vy = (t.vy * t.vol + d.vy * mv) / (t.vol + mv);
     d.vol -= mv; t.vol += mv;
     d.r = Math.cbrt(Math.max(d.vol, 0)); t.r = Math.cbrt(t.vol);
+    // the wobble starts when the two surfaces have visibly become one, not when the last volume moves
+    if (!d.rang && d.mergeT > tau * 1.1){
+      d.rang = true;
+      const kick = Math.min(0.16, 0.28 * Math.cbrt(d.vol0 / (t.vol + d.vol)));
+      if (!t.wob || kick > t.wob){ t.wob = kick; t.wobA = angle; t.wobT = 0; }
+    }
     if (d.vol <= 0.3){ t.vol += Math.max(d.vol, 0); t.r = Math.cbrt(t.vol); d.dead = true; }
   }
   if (drops.some(d => d.dead)) drops = drops.filter(d => !d.dead);
@@ -882,7 +906,8 @@ function reformStep(dt){
       if (inPill){ d.absorbing = true; plip(); kickMode(rand(0.6, 1.4) * (pill.hh / 55) * Math.min(1, d.r / 8), 2 + Math.floor(Math.random() * 4)); }
     }
     if (d.absorbing){
-      const moved = d.vol * (1 - Math.exp(-dt * 16)) + 0.5;
+      const tauA = 0.06 + 0.0028 * d.r / (pill.hh / 55);
+      const moved = d.vol * (1 - Math.exp(-dt / tauA)) + 0.5;
       const m = Math.min(moved, d.vol);
       d.vol -= m; pill.absorbed += m;
       d.r = Math.cbrt(Math.max(d.vol, 0));
@@ -1050,11 +1075,23 @@ function render(time, dt){
     const tl = Math.hypot(tx - d.x, ty - d.y);
     const maxT = d.r * 2.2;
     if (tl > maxT){ tx = d.x + (tx - d.x) * maxT / tl; ty = d.y + (ty - d.y) * maxT / tl; }
-    const shrink = 1 / Math.sqrt(1 + Math.min(tl, maxT) / (2 * Math.max(d.r, 0.5)) * 0.8);
+    // shape oscillation after a merge: alternately stretched along and across the joining axis
+    let hx = d.x, hy = d.y, ex = 0, ey = 0;
+    if (d.wob){
+      const kk = pill.hh / 55;
+      const w = TAU * 7 * Math.pow(10 * kk / Math.max(d.r, 1), 0.75);
+      const s = d.wob * Math.sin(w * d.wobT + Math.PI / 2);
+      const a = d.wobA + (s < 0 ? Math.PI / 2 : 0);
+      const e = Math.abs(s) * d.r;
+      ex = Math.cos(a) * e; ey = Math.sin(a) * e;
+      hx += ex; hy += ey; tx -= ex; ty -= ey;
+    }
+    const segLen = Math.min(tl, maxT) + 2 * Math.hypot(ex, ey);
+    const shrink = 1 / Math.sqrt(1 + segLen / (2 * Math.max(d.r, 0.5)) * 0.8);
     // droplets moving fast are mostly airborne and barely wet the surface they cross
     // flung splash drops are partly airborne; dragged and regrouping drops slide and leave a full trail
     const wetting = d.held ? 1 : phase === 'reform' ? 0.6 : 1 - Math.min(Math.hypot(d.vx, d.vy) / (160 * pill.hh / 55), 0.85);
-    dropBuf[i*4] = toX(d.x); dropBuf[i*4+1] = toY(d.y); dropBuf[i*4+2] = d.r * shrink * dpr; dropBuf[i*4+3] = wetting;
+    dropBuf[i*4] = toX(hx); dropBuf[i*4+1] = toY(hy); dropBuf[i*4+2] = d.r * shrink * dpr; dropBuf[i*4+3] = wetting;
     tailBuf[i*2] = toX(tx); tailBuf[i*2+1] = toY(ty);
   }
   gl.uniform1i(f.u.uCount, n);
