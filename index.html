@@ -53,7 +53,7 @@ canvas.addEventListener('webglcontextlost', e => { e.preventDefault(); lost = tr
 canvas.addEventListener('webglcontextrestored', () => location.reload());
 let lost = false;
 
-const MAX_DROPS = 64;
+const MAX_DROPS = Math.max(32, Math.min(96, Math.floor((gl.getParameter(gl.MAX_FRAGMENT_UNIFORM_VECTORS) - 32) / 2)));
 const TAU = Math.PI * 2;
 
 // ---------------------------------------------------------------- shaders
@@ -272,8 +272,8 @@ void main(){
   float shadow = smoothstep(10.0*px, -8.0*px, sd);
   float sd2 = F(p + Ldir * 2.5 * px).g;
   float shadow2 = smoothstep(3.0*px, -2.0*px, sd2);
-  floorC *= 1.0 - 0.26*shadow - 0.32*shadow2;
-  floorC *= 1.0 - 0.30 * exp(-max(d, 0.) / (1.2*px));
+  floorC *= 1.0 - 0.17*shadow - 0.20*shadow2;
+  floorC *= 1.0 - 0.20 * exp(-max(d, 0.) / (1.2*px));
 
   // ---------------- water
   vec3 I = vec3(0., 0., -1.);
@@ -284,8 +284,9 @@ void main(){
   float steep = smoothstep(0.16, 0.92, 1.0 - n.z);
   vec3 base = textureLod(uBg, sp / uRes, 2.6 + 3.5 * steep).rgb;
   float bl = dot(base, vec3(0.333));
-  base = mix(vec3(bl), vec3(0.80), 0.25) + (base - bl) * 0.55;
-  vec4 inkW = label(sp);
+  base = mix(vec3(bl), vec3(0.80), 0.25) + (base - bl) * 0.4;
+  // the label is only gently lensed so it stays legible as a button face
+  vec4 inkW = label(p + off * 0.15);
   base = base * (1.0 - inkW.a * 0.93) + inkW.rgb * 0.92 * 0.93;
   // light entering on the lit side focuses onto the floor on the far side
   float cz = F(sp + Ldir * 12.0 * px).g;
@@ -515,6 +516,22 @@ function plip(){
   const f = 500 + Math.random() * 700;
   blip(f * 0.7, f * 1.35, 0.05, 0.06);
 }
+function dropPopSound(r, flick){
+  const a = audio(); if (!a) return;
+  const s = Math.max(0.25, Math.min(r / 12, 1.4));      // r in reference px
+  const f = 1100 / Math.pow(s, 0.6);
+  if (flick){ blip(f * 1.2, f * 0.8, 0.03, 0.05); return; }
+  blip(f, f * 0.35, 0.06 + 0.04 * s, 0.12 + 0.18 * s);
+  const t = a.currentTime;
+  const src = a.createBufferSource(); src.buffer = noiseBuffer(a, 0.25);
+  const bp = a.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 3200 / Math.sqrt(s); bp.Q.value = 1.1;
+  const g = a.createGain();
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.exponentialRampToValueAtTime(0.10 + 0.14 * s, t + 0.006);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + 0.12 + 0.12 * s);
+  src.connect(bp).connect(g).connect(a.destination);
+  src.start(t); src.stop(t + 0.3);
+}
 function reformSound(){ blip(260, 720, 0.14, 0.22); }
 muteEl.addEventListener('click', () => {
   muted = !muted;
@@ -528,6 +545,9 @@ muteEl.addEventListener('click', () => {
 const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)');
 let phase = 'idle';      // idle | pop | scatter | reform
 let phaseT = 0;
+let simT = 0;            // simulation clock
+let lastBurst = 0;       // simT of the most recent pop of the button or a droplet
+const REGROUP_AFTER = 1.5;
 let drops = [];
 let V0 = 1;
 const rand = (a, b) => a + Math.random() * (b - a);
@@ -575,12 +595,91 @@ function pop(ox = pill.cx, oy = pill.cy){
         x: pill.cx + x, y: pill.cy + y, r, vol: r * r * r,
         vx: Math.cos(ang) * speed, vy: Math.sin(ang) * speed,
         mu: small ? rand(3.2, 5.5) : rand(4.5, 6.5),
-        into: null, delay: 0, absorbing: false,
+        into: null, delay: 0, absorbing: false, born: simT,
       });
     }
   }
   V0 = drops.reduce((s, d) => s + d.vol, 0);
   pill.absorbed = 0;
+  lastBurst = simT;
+}
+
+// While regrouping, the half-formed pill is just another body of water: hand its volume back as a drop.
+function cancelReform(){
+  if (phase !== 'reform') return null;
+  phase = 'scatter'; phaseT = 0;
+  let body = null;
+  if (pill.absorbed > 0.5){
+    const r = Math.cbrt(pill.absorbed);
+    body = { x: pill.cx, y: pill.cy, r, vol: pill.absorbed, vx: 0, vy: 0, mu: 6, into: null, delay: 0, absorbing: false, born: simT - 1 };
+    drops.push(body);
+  }
+  pill.absorbed = 0; pill.scale = 0; pill.scaleV = 0; pill.scaleT = 0;
+  for (const d of drops) d.absorbing = false;
+  return body;
+}
+
+// Pop one droplet into smaller ones that behave exactly like the first splash.
+function burstDrop(d, ox, oy){
+  const k = pill.hh / 55;
+  lastBurst = simT;
+  const room = MAX_DROPS - drops.length + 1;
+  let n = d.r > 10 * k ? Math.round(rand(4, 7)) : d.r > 5 * k ? Math.round(rand(3, 4)) : 2;
+  n = Math.min(n, room);
+  // too small to split (or no room left): it just gets flicked away from the finger
+  if (d.r < 2.6 * k || n < 2){
+    const ex = d.x - ox, ey = d.y - oy, el = Math.hypot(ex, ey) || 1;
+    const sp = rand(120, 220) * k;
+    d.vx += ex / el * sp; d.vy += ey / el * sp;
+    dropPopSound(d.r / k, true);
+    return;
+  }
+  const w = Array.from({ length: n }, () => Math.pow(rand(0.35, 1), 2));
+  const ws = w.reduce((a, b) => a + b, 0);
+  const energy = Math.sqrt(Math.min(d.r / (10 * k), 2));
+  const idx = drops.indexOf(d);
+  const parts = w.map((wi, i) => {
+    const vol = d.vol * wi / ws;
+    const r = Math.cbrt(vol);
+    const a = (i / n) * TAU + rand(-0.5, 0.5);
+    const off = d.r * rand(0.1, 0.45);
+    const x = d.x + Math.cos(a) * off, y = d.y + Math.sin(a) * off;
+    const ex = x - ox, ey = y - oy, el = Math.hypot(ex, ey) || 1;
+    const mx = Math.cos(a) + ex / el * 0.8, my = Math.sin(a) + ey / el * 0.8;
+    const ang = Math.atan2(my, mx) + rand(-0.3, 0.3);
+    const speed = rand(150, 320) * k * energy * (r < 4 * k ? 1.35 : 1) * (reduceMotion.matches ? 0.35 : 1);
+    return {
+      x, y, r, vol, vx: d.vx * 0.3 + Math.cos(ang) * speed, vy: d.vy * 0.3 + Math.sin(ang) * speed,
+      mu: r < 6 * k ? rand(3.2, 5.5) : rand(4.5, 6.5), into: null, delay: 0, absorbing: false, born: simT,
+    };
+  });
+  // anything already sliding into this drop now has nothing to merge with
+  for (const o of drops) if (o.into === d) o.into = null;
+  drops.splice(idx, 1, ...parts);
+  dropPopSound(d.r / k, false);
+}
+
+function burstAt(x, y){
+  if (phase !== 'scatter' && phase !== 'reform') return false;
+  let target = null, best = Infinity;
+  for (const d of drops){
+    if (d.into || d.absorbing) continue;
+    const g = Math.hypot(d.x - x, d.y - y) - d.r;
+    const slop = Math.max(6, 14 - d.r * 0.3);     // small targets get a bigger touch margin
+    if (g < slop && g < best){ best = g; target = d; }
+  }
+  if (!target && phase === 'reform' && pill.scale > 0.05 && pillSdf(x, y) < 4) target = cancelReform();
+  if (!target) return false;
+  if (phase === 'reform') cancelReform();
+  burstDrop(target, x, y);
+  return true;
+}
+
+function burstLargest(){
+  if (phase === 'reform'){ const body = cancelReform(); if (body){ burstDrop(body, body.x, body.y + 1); return; } }
+  let big = null;
+  for (const d of drops) if (!d.into && (!big || d.vol > big.vol)) big = d;
+  if (big) burstDrop(big, big.x, big.y + 1);
 }
 
 function startReform(){
@@ -603,7 +702,7 @@ function spring(x, v, target, k, c, dt){
 }
 
 function step(dt){
-  phaseT += dt;
+  phaseT += dt; simT += dt;
 
   // pill springs
   [pill.sx, pill.sxV] = spring(pill.sx, pill.sxV, 1 + 0.05 * pill.press, 420, 13, dt);
@@ -626,12 +725,10 @@ function step(dt){
       if (sp < 22 * (pill.hh / 55)){ d.vx *= Math.exp(-dt * 18); d.vy *= Math.exp(-dt * 18); }
       d.x += d.vx * dt; d.y += d.vy * dt;
     }
-    if (phase === 'scatter' && phaseT > 0.12) mergeDrops(dt);
+    if (phase === 'scatter') mergeDrops(dt);
     const moving = drops.some(d => Math.hypot(d.vx, d.vy) > 6);
-    if (phase === 'scatter' && ((phaseT > 0.7 && !moving) || phaseT > 2.0)){
-      if (!drops.restAt) drops.restAt = phaseT;
-      if (phaseT - drops.restAt > 0.2 || phaseT > 2.0) startReform();
-    }
+    const quiet = simT - lastBurst;
+    if (phase === 'scatter' && ((quiet > REGROUP_AFTER && !moving) || quiet > REGROUP_AFTER + 1)) startReform();
   } else if (phase === 'reform'){
     reformStep(dt);
   }
@@ -641,9 +738,10 @@ function mergeDrops(dt){
   for (let i = 0; i < drops.length; i++){
     const a = drops[i];
     if (a.into) continue;
+    if (simT - a.born < 0.12) continue;          // fresh fragments start overlapping; let them fly apart first
     for (let j = i + 1; j < drops.length; j++){
       const b = drops[j];
-      if (b.into) continue;
+      if (b.into || simT - b.born < 0.12) continue;
       if (Math.hypot(a.x - b.x, a.y - b.y) < (a.r + b.r) * 1.15){
         const [big, small] = a.vol >= b.vol ? [a, b] : [b, a];
         small.into = big;
@@ -667,11 +765,7 @@ function mergeDrops(dt){
     d.r = Math.cbrt(Math.max(d.vol, 0)); t.r = Math.cbrt(t.vol);
     if (d.vol <= 0.3){ t.vol += Math.max(d.vol, 0); t.r = Math.cbrt(t.vol); d.dead = true; }
   }
-  if (drops.some(d => d.dead)){
-    const rest = drops.restAt;
-    drops = drops.filter(d => !d.dead);
-    drops.restAt = rest;
-  }
+  if (drops.some(d => d.dead)) drops = drops.filter(d => !d.dead);
 }
 
 function reformStep(dt){
@@ -731,18 +825,29 @@ function reformStep(dt){
 // ---------------------------------------------------------------- input
 let hover = false, pressed = false, pointerId = null;
 function hitPill(x, y){ return phase === 'idle' && pillSdf(x, y) < 2; }
+function overDrop(x, y){
+  if (phase !== 'scatter' && phase !== 'reform') return false;
+  if (phase === 'reform' && pill.scale > 0.05 && pillSdf(x, y) < 4) return true;
+  return drops.some(d => !d.into && !d.absorbing && Math.hypot(d.x - x, d.y - y) - d.r < Math.max(6, 14 - d.r * 0.3));
+}
 canvas.addEventListener('pointermove', e => {
   const h = hitPill(e.clientX, e.clientY);
   if (h && !hover && !reduceMotion.matches) kickMode(0.9 * (pill.hh / 55), 3);
   hover = h;
-  canvas.style.cursor = h ? 'pointer' : 'default';
+  canvas.style.cursor = h || overDrop(e.clientX, e.clientY) ? 'pointer' : 'default';
   if (pressed && e.pointerId === pointerId){
     pill.dentX = e.clientX; pill.dentY = e.clientY;
     pill.pressT = pillSdf(e.clientX, e.clientY) < 8 ? 1 : 0;
   }
 });
 canvas.addEventListener('pointerdown', e => {
-  if (e.button !== 0 || !e.isPrimary || pressed || !hitPill(e.clientX, e.clientY)) return;
+  if (e.button !== 0) return;
+  // droplets pop on touch-down so rapid tapping (and multi-finger tapping) feels immediate
+  if (phase === 'scatter' || phase === 'reform'){
+    if (burstAt(e.clientX, e.clientY)){ audio(); lastActive = performance.now(); e.preventDefault(); }
+    return;
+  }
+  if (!e.isPrimary || pressed || !hitPill(e.clientX, e.clientY)) return;
   audio();
   pressed = true; pointerId = e.pointerId;
   canvas.setPointerCapture(e.pointerId);
@@ -763,7 +868,11 @@ canvas.addEventListener('pointercancel', e => release(e, true));
 canvas.addEventListener('lostpointercapture', e => release(e, true));
 canvas.addEventListener('contextmenu', e => { if (pressed) release({ pointerId, clientX: 0, clientY: 0 }, true); });
 
-btnEl.addEventListener('click', () => { audio(); pop(); });
+btnEl.addEventListener('click', () => {
+  audio();
+  if (phase === 'idle') pop();
+  else if (phase === 'scatter' || phase === 'reform') burstLargest();
+});
 btnEl.addEventListener('keydown', e => {
   if ((e.key === ' ' || e.key === 'Enter') && !e.repeat && phase === 'idle'){
     pill.dentX = pill.cx; pill.dentY = pill.cy; pill.pressT = 1;
@@ -921,7 +1030,7 @@ requestAnimationFrame(frame);
 
 // hooks for automated visual testing
 window.__water = {
-  pop, get phase(){ return phase; }, get drops(){ return drops; }, get renderScale(){ return renderScale; },
+  pop, burstAt, burstLargest, get phase(){ return phase; }, get drops(){ return drops; }, get renderScale(){ return renderScale; },
   manual(on){ manual = on; last = performance.now(); },
   advance(sec, fps = 60){ const n = Math.round(sec * fps); for (let i = 0; i < n; i++) advance(1 / fps, performance.now() / 1000); },
   press(on){ pill.dentX = pill.cx + pill.hw * 0.2; pill.dentY = pill.cy; pill.pressT = on ? 1 : 0; },
