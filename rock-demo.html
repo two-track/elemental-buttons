@@ -1,0 +1,262 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Account settings</title>
+<style>
+  :root {
+    --bg: #f4f4f2; --panel: #ffffff; --ink: #1c1d1f; --muted: #62656b; --soft: #8a8d93; --line: #e3e3df; --field: #fbfbfa;
+    --accent: #2f5bd3; --danger: #c3392f; --danger-ink: #a2281f; --danger-bg: #fdf3f2; --danger-line: #f1cdc9;
+    --shadow: 0 1px 2px rgba(20,20,25,.05), 0 8px 24px -16px rgba(20,20,25,.18);
+    --sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", Inter, "Segoe UI", system-ui, sans-serif;
+    color-scheme: light;
+  }
+  :root[data-theme="dark"] {
+    --bg: #141518; --panel: #1c1d21; --ink: #ececef; --muted: #a2a5ad; --soft: #767983; --line: #2c2e33; --field: #17181b;
+    --accent: #8aa6ff; --danger: #c3392f; --danger-ink: #ff8e84; --danger-bg: #231819; --danger-line: #4a2724;
+    --shadow: 0 1px 2px rgba(0,0,0,.3), 0 10px 30px -18px rgba(0,0,0,.6);
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body { background: var(--bg); color: var(--ink); font: 15px/1.5 var(--sans); -webkit-font-smoothing: antialiased; }
+
+  header.top { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 18px clamp(16px, 4vw, 40px);
+    border-bottom: 1px solid var(--line); background: var(--panel); }
+  .brand { display: flex; align-items: center; gap: 10px; font-weight: 700; letter-spacing: -.01em; }
+  .brand i { width: 22px; height: 22px; border-radius: 7px; background: var(--ink); display: block; position: relative; }
+  .brand i::after { content: ""; position: absolute; inset: 6px; border-radius: 3px; background: var(--panel); }
+  .who { display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: 14px; }
+  .avatar { width: 30px; height: 30px; border-radius: 50%; background: linear-gradient(135deg, #d9b99b, #a07c5c); }
+
+  .wrap { max-width: 1040px; margin: 0 auto; padding: 36px clamp(16px, 4vw, 40px) 120px; display: grid; grid-template-columns: 250px 1fr; grid-template-rows: auto 1fr; grid-template-areas: 'nav main' 'demo main'; column-gap: 40px; row-gap: 24px; }
+  .wrap > main { grid-area: main; min-width: 0; }
+  nav.side { grid-area: nav; display: grid; gap: 2px; align-self: start; }
+  nav.side a { color: var(--muted); text-decoration: none; padding: 8px 12px; border-radius: 8px; font-size: 14px; }
+  nav.side a:hover { background: var(--panel); color: var(--ink); }
+  nav.side a[aria-current] { background: var(--panel); color: var(--ink); font-weight: 600; box-shadow: var(--shadow); }
+  nav.side a.danger { color: var(--danger-ink); }
+
+  h1 { font-size: 26px; letter-spacing: -.02em; margin: 0 0 4px; }
+  .sub { color: var(--muted); margin: 0 0 28px; }
+  section.card { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; box-shadow: var(--shadow); margin: 0 0 24px; }
+  .card-h { padding: 20px 24px 0; }
+  .card-h h2 { font-size: 16px; margin: 0 0 2px; }
+  .card-h p { margin: 0; color: var(--muted); font-size: 14px; }
+  .card-b { padding: 20px 24px 24px; display: grid; gap: 16px; }
+  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  label { display: grid; gap: 6px; font-size: 13px; font-weight: 600; color: var(--muted); }
+  input[type=text], input[type=email] { height: 40px; border-radius: 9px; border: 1px solid var(--line); background: var(--field); color: var(--ink);
+    padding: 0 12px; font: inherit; }
+  input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .card-f { border-top: 1px solid var(--line); padding: 14px 24px; display: flex; justify-content: flex-end; gap: 10px; }
+  .btn { height: 36px; padding: 0 16px; border-radius: 9px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); font: 600 14px/1 var(--sans); cursor: pointer; }
+  .btn.primary { background: var(--ink); color: var(--panel); border-color: transparent; }
+  .btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .toggle { display: flex; justify-content: space-between; align-items: center; gap: 16px; }
+  .toggle b { display: block; font-size: 14px; }
+  .toggle span { color: var(--muted); font-size: 13px; }
+  .switch { width: 38px; height: 22px; border-radius: 11px; background: var(--accent); position: relative; flex: none; border: 0; cursor: pointer; }
+  .switch::after { content: ""; position: absolute; top: 3px; left: 19px; width: 16px; height: 16px; border-radius: 50%; background: #fff; transition: left .15s; }
+  .switch[aria-checked=false] { background: var(--line); }
+  .switch[aria-checked=false]::after { left: 3px; }
+
+  section.danger { border-color: var(--danger-line); }
+  section.danger .card-h h2 { color: var(--danger-ink); }
+  .danger-row { display: flex; align-items: center; justify-content: space-between; gap: 24px; padding: 24px; flex-wrap: wrap; }
+  .danger-row .txt { flex: 1 1 280px; }
+  .danger-row b { display: block; font-size: 14px; margin-bottom: 2px; }
+  .danger-row span { color: var(--muted); font-size: 14px; }
+  .rock { height: 46px; padding: 0 24px; border-radius: 10px; border: 0; background: var(--danger); color: #fff;
+    font: 700 15px/1 var(--sans); letter-spacing: .01em; cursor: pointer; flex: none; }
+  .rock:focus { outline: none; }
+  .rock:focus-visible { outline: 2px solid var(--danger-ink); outline-offset: 6px; }
+  .confirm { margin: 0 24px 24px; padding: 16px; border-radius: 10px; background: var(--danger-bg); border: 1px solid var(--danger-line); display: none; gap: 12px; }
+  .confirm.show { display: grid; }
+  .confirm p { margin: 0; font-size: 14px; }
+  .confirm .acts { display: flex; gap: 10px; justify-content: flex-end; flex-wrap: wrap; }
+  .btn.really { background: var(--danger); color: #fff; border-color: transparent; }
+
+  .toast { position: fixed; left: 50%; bottom: 24px; z-index: 50; transform: translate(-50%, 16px); opacity: 0; pointer-events: none;
+    background: var(--ink); color: var(--panel); border-radius: 12px; padding: 12px 14px 12px 16px; font-size: 14px; font-weight: 500;
+    display: flex; align-items: center; gap: 14px; box-shadow: 0 14px 40px -12px rgba(0,0,0,.45); transition: opacity .2s ease, transform .3s cubic-bezier(.2,.9,.3,1.2);
+    max-width: calc(100vw - 32px); }
+  .toast.show { opacity: 1; transform: translate(-50%, 0); pointer-events: auto; }
+  .toast button { background: none; border: 0; color: inherit; font: 700 14px/1 var(--sans); text-decoration: underline; cursor: pointer; padding: 4px; }
+
+  /* demo controls, kept apart from the page itself */
+  .demo { grid-area: demo; align-self: start; position: sticky; top: 24px; background: var(--panel); border: 1px solid var(--line); border-radius: 14px; box-shadow: var(--shadow); padding: 12px; font-size: 13px; }
+  .demo .hd { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; color: var(--muted); font-weight: 600; font-size: 12px; letter-spacing: .06em; text-transform: uppercase; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chip { height: 28px; padding: 0 10px; border-radius: 14px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); font: 500 12.5px/1 var(--sans); cursor: pointer; display: inline-flex; align-items: center; gap: 6px; }
+  .chip[aria-pressed=true] { background: var(--ink); color: var(--panel); border-color: transparent; }
+  .chip i { width: 10px; height: 10px; border-radius: 50%; display: block; border: 1px solid rgba(127,127,127,.35); }
+  .chip:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .demo .line { display: flex; align-items: center; justify-content: space-between; gap: 8px 10px; margin-top: 10px; flex-wrap: wrap; }
+  .demo input[type=color] { width: 34px; height: 26px; padding: 0; border: 1px solid var(--line); border-radius: 7px; background: none; cursor: pointer; }
+  .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 9px; overflow: hidden; }
+  .seg button { height: 28px; padding: 0 10px; border: 0; background: var(--panel); color: var(--muted); font: 500 12.5px/1 var(--sans); cursor: pointer; }
+  .seg button[aria-pressed=true] { background: var(--ink); color: var(--panel); }
+  .icon-btn { width: 28px; height: 28px; border-radius: 8px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); display: grid; place-items: center; cursor: pointer; padding: 0; }
+  .icon-btn svg { width: 15px; height: 15px; }
+  .hint { color: var(--soft); font-size: 12px; margin: 10px 0 0; }
+
+  @media (max-width: 760px) {
+    .wrap { grid-template-columns: 1fr; grid-template-areas: 'nav' 'main' 'demo'; gap: 20px; padding-top: 24px; padding-bottom: 60px; }
+    nav.side { position: static; display: flex; overflow-x: auto; gap: 4px; margin: 0 -16px; padding: 0 16px 4px; }
+    nav.side a { white-space: nowrap; }
+    .row { grid-template-columns: 1fr; }
+    .who span { display: none; }
+    .demo { position: static; }
+  }
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="brand"><i></i>Ledgerline</div>
+  <div class="who"><span>maya@northfield.co</span><div class="avatar" aria-hidden="true"></div></div>
+</header>
+
+<div class="wrap">
+  <nav class="side" aria-label="Settings">
+    <a href="#profile" aria-current="page">Account</a>
+    <a href="#notifications">Notifications</a>
+    <a href="#profile">Security</a>
+    <a href="#profile">Billing</a>
+    <a href="#danger" class="danger">Danger zone</a>
+  </nav>
+
+  <main>
+    <h1>Account</h1>
+    <p class="sub">Manage your profile and what happens to your data.</p>
+
+    <section class="card" id="profile">
+      <div class="card-h"><h2>Profile</h2><p>This is how others see you across the workspace.</p></div>
+      <div class="card-b">
+        <div class="row">
+          <label>Full name<input type="text" value="Maya Okafor"></label>
+          <label>Display name<input type="text" value="maya"></label>
+        </div>
+        <label>Email<input type="email" value="maya@northfield.co"></label>
+      </div>
+      <div class="card-f"><button class="btn" type="button">Cancel</button><button class="btn primary" type="button">Save changes</button></div>
+    </section>
+
+    <section class="card" id="notifications">
+      <div class="card-h"><h2>Notifications</h2><p>Choose what we email you about.</p></div>
+      <div class="card-b">
+        <div class="toggle"><div><b>Weekly summary</b><span>A digest of activity every Monday.</span></div><button class="switch" type="button" role="switch" aria-checked="true" aria-label="Weekly summary"></button></div>
+        <div class="toggle"><div><b>Product updates</b><span>New features, at most once a month.</span></div><button class="switch" type="button" role="switch" aria-checked="false" aria-label="Product updates"></button></div>
+      </div>
+    </section>
+
+    <section class="card danger" id="danger">
+      <div class="card-h"><h2>Danger zone</h2><p>Irreversible actions for this account.</p></div>
+      <div class="danger-row">
+        <div class="txt"><b>Delete account</b><span>Permanently remove your account, your 14 projects and every file in them.</span></div>
+        <button class="rock" id="delete" type="button" aria-controls="confirm" aria-expanded="false">Delete account</button>
+      </div>
+      <div class="confirm" id="confirm" role="region" aria-label="Confirm deletion">
+        <p><strong>Delete maya@northfield.co?</strong> Your projects and files will be removed after 30 days. You can restore the account until then.</p>
+        <div class="acts"><button class="btn" type="button" id="keep">Keep my account</button><button class="btn really" type="button" id="really">Yes, delete my account</button></div>
+      </div>
+    </section>
+  </main>
+  <aside class="demo" aria-label="Demo controls">
+  <div class="hd"><span>Stone</span>
+    <button class="icon-btn" id="mute" type="button" aria-label="Mute sound" aria-pressed="false">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M11 5 6 9H3v6h3l5 4z"/><path class="on" d="M15.5 8.5a5 5 0 0 1 0 7M18.5 5.5a9 9 0 0 1 0 13"/>
+        <path class="off" d="m16 9 6 6m0-6-6 6" style="display:none"/>
+      </svg>
+    </button>
+  </div>
+  <div class="chips" id="mats"></div>
+  <div class="line">
+    <label style="display:flex;align-items:center;gap:8px;font-weight:500;color:var(--muted)">Custom tint <input type="color" id="tint" value="#6b4cff" aria-label="Custom stone colour"></label>
+    <div class="seg" role="group" aria-label="Page theme"><button type="button" data-theme="light" aria-pressed="true">Light</button><button type="button" data-theme="dark" aria-pressed="false">Dark</button></div>
+  </div>
+  <div class="line fam"><span style="color:var(--muted)">Tint as</span>
+    <div class="seg" role="group" aria-label="Stone structure for the custom tint" id="fam"><button type="button" data-fam="" aria-pressed="true">Plain</button><button type="button" data-fam="granite" aria-pressed="false">Granite</button><button type="button" data-fam="marble" aria-pressed="false">Marble</button><button type="button" data-fam="slate" aria-pressed="false">Slate</button></div>
+  </div>
+  <p class="hint">Click the button, then drag the pieces and throw them into each other.</p>
+</aside>
+</div>
+
+<div class="toast" role="status" aria-live="polite"><span id="toast-msg"></span><button type="button" id="undo">Undo</button></div>
+
+
+
+<script src="fx/rock.js"></script>
+<script>
+  const btn = document.getElementById('delete');
+  const confirmBox = document.getElementById('confirm');
+  const toast = document.querySelector('.toast');
+  const fx = window.__rockfx = ElementalFX.attachRock(btn, { material: 'slate' });
+
+  // the page's own behaviour: it doesn't know or care that the button is made of stone
+  btn.addEventListener('click', () => {
+    confirmBox.classList.add('show');
+    btn.setAttribute('aria-expanded', 'true');
+    window.__clicks = (window.__clicks || 0) + 1;
+  });
+  document.getElementById('keep').addEventListener('click', () => {
+    confirmBox.classList.remove('show'); btn.setAttribute('aria-expanded', 'false'); btn.focus();
+  });
+  let toastTimer = 0;
+  function showToast(msg){
+    document.getElementById('toast-msg').textContent = msg;
+    toast.classList.add('show');
+    clearTimeout(toastTimer); toastTimer = setTimeout(() => toast.classList.remove('show'), 6000);
+  }
+  document.getElementById('really').addEventListener('click', () => {
+    confirmBox.classList.remove('show'); btn.setAttribute('aria-expanded', 'false');
+    showToast('Account scheduled for deletion on 27 Oct.');
+  });
+  document.getElementById('undo').addEventListener('click', () => { toast.classList.remove('show'); showToast('Deletion cancelled. Welcome back.'); document.getElementById('undo').hidden = true; setTimeout(() => document.getElementById('undo').hidden = false, 6000); });
+  for (const s of document.querySelectorAll('.switch')) s.addEventListener('click', () => s.setAttribute('aria-checked', s.getAttribute('aria-checked') === 'true' ? 'false' : 'true'));
+
+  // demo controls
+  const swatch = { granite: '#c79a8d', slate: '#40494e', basalt: '#2e2e30', sandstone: '#c49c74', marble: '#eeebe6', limestone: '#dbd0ba', concrete: '#a5a39e', auto: 'var(--danger)' };
+  const mats = document.getElementById('mats');
+  const chipFor = {};
+  for (const name of [...ElementalFX.rockMaterials, 'auto']){
+    const b = document.createElement('button');
+    b.type = 'button'; b.className = 'chip'; b.setAttribute('aria-pressed', String(name === 'slate'));
+    b.innerHTML = `<i style="background:${swatch[name]}"></i>${name[0].toUpperCase() + name.slice(1)}`;
+    b.addEventListener('click', () => pick(name));
+    mats.appendChild(b); chipFor[name] = b;
+  }
+  function pick(m){
+    fx.setMaterial(m);
+    for (const [k, b] of Object.entries(chipFor)) b.setAttribute('aria-pressed', String(k === m));
+  }
+  const tint = document.getElementById('tint');
+  let family = '';
+  function applyTint(){
+    fx.setMaterial(family ? { base: tint.value, family } : { base: tint.value });
+    for (const b of Object.values(chipFor)) b.setAttribute('aria-pressed', 'false');
+  }
+  tint.addEventListener('input', applyTint);
+  for (const b of document.querySelectorAll('#fam button')) b.addEventListener('click', () => {
+    family = b.dataset.fam;
+    for (const o of document.querySelectorAll('#fam button')) o.setAttribute('aria-pressed', String(o === b));
+    applyTint();
+  });
+  const themeBtns = document.querySelectorAll('.seg button[data-theme]');
+  for (const b of themeBtns) b.addEventListener('click', () => {
+    document.documentElement.dataset.theme = b.dataset.theme;
+    for (const o of themeBtns) o.setAttribute('aria-pressed', String(o === b));
+  });
+  const mute = document.getElementById('mute');
+  mute.addEventListener('click', () => {
+    const m = ElementalFX.rockAudio.muted = !ElementalFX.rockAudio.muted;
+    mute.setAttribute('aria-pressed', String(m));
+    mute.setAttribute('aria-label', m ? 'Unmute sound' : 'Mute sound');
+    mute.querySelector('.on').style.display = m ? 'none' : '';
+    mute.querySelector('.off').style.display = m ? '' : 'none';
+  });
+</script>
+</body>
+</html>
