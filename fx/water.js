@@ -1136,7 +1136,9 @@ function attachWater(button, opts = {}){
       d.x += d.vx * dt; d.y += d.vy * dt;
 
       if (!d.absorbing){
-        const inPill = pill.scale > 0.02 ? pillSdf(d.x, d.y) < -d.r * 0.15 : Math.hypot(d.x - tx, d.y - ty) < d.r + 1;
+        // A drop bigger than the half-grown pill can never sit inside it, so arriving at the centre also counts;
+        // without that, a drop holding most of the water parks on the centre as a circle for good.
+        const inPill = (pill.scale > 0.02 && pillSdf(d.x, d.y) < -d.r * 0.15) || Math.hypot(d.x - tx, d.y - ty) < d.r + 1;
         if (inPill){ d.absorbing = true; plop(); kickMode(rand(0.6, 1.4) * k * Math.min(1, d.r / 8), 2 + Math.floor(Math.random() * 4)); }
       }
       if (d.absorbing){
