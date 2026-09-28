@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Break-Glass Access</title>
+<style>
+  :root {
+    --bg: #0c1113; --ink: #e9f0ee; --muted: #93a39f; --line: rgba(170, 220, 205, .13); --accent: #7fe0c0;
+    --card: #121a1c; --panel: rgba(8, 14, 15, .6); --fine: #71827e; --warn: #f2b35b; --chip: rgba(255,255,255,.05);
+  }
+  :root.light {
+    --bg: #eef2f1; --ink: #14201d; --muted: #55655f; --line: rgba(20, 60, 50, .14); --accent: #0f7f62;
+    --card: #ffffff; --panel: rgba(232, 240, 237, .85); --fine: #72827d; --warn: #b46a07; --chip: rgba(0,0,0,.04);
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; min-height: 100%; background: var(--bg); color: var(--ink);
+    font: 15px/1.55 -apple-system, BlinkMacSystemFont, "SF Pro Text", Inter, "Segoe UI", system-ui, sans-serif; }
+  header { max-width: 1000px; margin: 0 auto; padding: 20px 20px; display: flex; justify-content: space-between; align-items: center; gap: 12px; color: var(--muted); font-size: 14px; flex-wrap: wrap; }
+  header b { color: var(--ink); letter-spacing: .02em; }
+  header .tools { display: flex; gap: 14px; align-items: center; }
+  header a, .linkish { color: var(--accent); text-decoration: none; background: none; border: 0; font: inherit; cursor: pointer; padding: 0; }
+  main { display: grid; place-items: center; padding: 18px 16px 64px; }
+  .card { position: relative; width: min(600px, 100%); border: 1px solid var(--line); border-radius: 20px;
+    padding: 34px 36px 32px; background-color: var(--card); background-size: 100% 100%;
+    box-shadow: 0 1px 0 rgba(255,255,255,.05) inset, 0 30px 70px -30px rgba(0,0,0,.55); }
+  .eyebrow { font-size: 12px; letter-spacing: .16em; text-transform: uppercase; color: var(--warn); font-weight: 650; margin: 0 0 10px; }
+  h1 { font-size: 28px; line-height: 1.15; margin: 0 0 10px; letter-spacing: -.01em; }
+  p { margin: 0 0 20px; color: var(--muted); }
+  .grant { display: grid; grid-template-columns: auto 1fr; gap: 6px 16px; padding: 14px 16px; border-radius: 12px; background: var(--panel);
+    border: 1px solid var(--line); margin-bottom: 26px; font-size: 13.5px; }
+  .grant dt { color: var(--muted); }
+  .grant dd { margin: 0; color: var(--ink); font-weight: 560; }
+  .row { display: flex; gap: 18px; align-items: center; flex-wrap: wrap; }
+  .glass { height: 62px; padding: 0 38px; border-radius: 10px; border: 0; background: #cfe9df; color: #0d2a22;
+    font: 700 19px/1 -apple-system, BlinkMacSystemFont, "SF Pro Display", Inter, "Segoe UI", system-ui, sans-serif; letter-spacing: .06em; text-transform: uppercase; cursor: pointer; }
+  .glass:focus-visible { outline: 2px solid var(--accent); outline-offset: 8px; }
+  .ghost { background: none; border: 0; color: var(--muted); font: inherit; font-size: 14px; cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
+  .hint { margin: 64px 0 0; font-size: 13px; color: var(--fine); }
+  .log { margin: 18px 0 0; padding: 0; list-style: none; font: 12.5px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--muted); max-height: 7.5em; overflow: hidden; }
+  .log li { padding: 2px 0; border-top: 1px dashed var(--line); }
+  .log li b { color: var(--ink); font-weight: 600; }
+  .tints { display: flex; gap: 6px; flex-wrap: wrap; margin: 16px 0 0; }
+  .tints button { font: 12px/1 inherit; font-family: inherit; padding: 6px 10px; border-radius: 999px; border: 1px solid var(--line); background: var(--chip); color: var(--muted); cursor: pointer; }
+  .tints button[aria-pressed="true"] { color: var(--ink); border-color: var(--accent); }
+  .toast { position: fixed; left: 50%; bottom: 28px; transform: translate(-50%, 20px); opacity: 0; transition: .35s ease;
+    background: #eafff7; color: #0b2a21; padding: 12px 18px; border-radius: 12px; font-size: 14.5px; font-weight: 600;
+    box-shadow: 0 16px 40px -12px rgba(0,0,0,.6); z-index: 50; pointer-events: none; max-width: calc(100% - 32px); }
+  .toast.on { opacity: 1; transform: translate(-50%, 0); }
+  @media (max-width: 480px) { .card { padding: 26px 20px 24px; } h1 { font-size: 24px; } .glass { padding: 0 26px; font-size: 17px; } }
+</style>
+</head>
+<body>
+<header><b>Harbor Ops &middot; Console</b><span class="tools"><button class="linkish" id="mute" type="button" aria-pressed="false">Sound on</button><a id="theme" href="?light">Light page</a></span></header>
+<main>
+  <section class="card" id="card">
+    <p class="eyebrow">Production &middot; Emergency access</p>
+    <h1>Break glass for admin access.</h1>
+    <p>Grants you owner rights on <b>prod-eu-west</b> for 60 minutes. Every action is recorded, the on-call lead is paged, and access expires on its own.</p>
+    <dl class="grant"><dt>Role</dt><dd>Owner (temporary)</dd><dt>Scope</dt><dd>prod-eu-west &middot; all services</dd><dt>Expires</dt><dd id="exp">60 min after granting</dd></dl>
+    <div class="row">
+      <button class="glass" id="break" type="button">Break glass</button>
+      <button class="ghost" type="button">Request normal access</button>
+    </div>
+    <p class="hint">Click the pane to break it. Tap or drag the shards on the ledge; leave them and the pane mends itself. Enter or Space works too.</p>
+    <div class="tints" role="group" aria-label="Glass tint">
+      <button type="button" data-tint="clear" aria-pressed="true">Clear</button>
+      <button type="button" data-tint="green">Green</button>
+      <button type="button" data-tint="smoked">Smoked</button>
+      <button type="button" data-tint="frosted">Frosted</button>
+      <button type="button" data-tint="stained">Stained</button>
+      <button type="button" data-tint="auto">Auto</button>
+    </div>
+    <ul class="log" id="log" aria-live="polite"></ul>
+  </section>
+</main>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+<script src="fx/glass.js"></script>
+<script>
+  const light = new URLSearchParams(location.search).has('light');
+  if (light){ document.documentElement.classList.add('light'); const a = document.getElementById('theme'); a.textContent = 'Dark page'; a.href = '?'; }
+  const pal = light
+    ? { a: '#ffffff', b: '#f3f7f5', grid: 'rgba(20, 90, 70, .10)', stripe: 'rgba(200, 120, 20, .10)', text: 'rgba(20, 60, 50, .10)', glow: 'rgba(90, 200, 160, .14)' }
+    : { a: '#15201f', b: '#0f1716', grid: 'rgba(150, 230, 200, .075)', stripe: 'rgba(242, 179, 91, .085)', text: 'rgba(170, 230, 210, .075)', glow: 'rgba(90, 220, 170, .10)' };
+  // The card's backdrop, painted once, so the pane has something to bend: a fine grid, a band of hazard
+  // stripes where the pane stands, and faint lettering.
+  function backdrop(w, h, s){
+    const c = document.createElement('canvas');
+    c.width = Math.round(w * s); c.height = Math.round(h * s);
+    const x = c.getContext('2d');
+    x.scale(s, s);
+    const g = x.createLinearGradient(0, 0, w, h);
+    g.addColorStop(0, pal.a); g.addColorStop(1, pal.b);
+    x.fillStyle = g; x.fillRect(0, 0, w, h);
+    const glow = x.createRadialGradient(w * 0.9, h * 0.05, 0, w * 0.9, h * 0.05, w * 0.7);
+    glow.addColorStop(0, pal.glow); glow.addColorStop(1, 'rgba(0,0,0,0)');
+    x.fillStyle = glow; x.fillRect(0, 0, w, h);
+    x.strokeStyle = pal.grid; x.lineWidth = 1;
+    for (let xx = 0.5; xx < w; xx += 16){ x.beginPath(); x.moveTo(xx, 0); x.lineTo(xx, h); x.stroke(); }
+    for (let yy = 0.5; yy < h; yy += 16){ x.beginPath(); x.moveTo(0, yy); x.lineTo(w, yy); x.stroke(); }
+    const br = document.getElementById('break').getBoundingClientRect(), cr = card.getBoundingClientRect();
+    const y0 = br.top - cr.top - 22, y1 = br.bottom - cr.top + 22;
+    x.save(); x.beginPath(); x.rect(0, y0, w, y1 - y0); x.clip();
+    x.fillStyle = pal.stripe;
+    for (let k = -h; k < w + h; k += 22){ x.beginPath(); x.moveTo(k, y1); x.lineTo(k + 11, y1); x.lineTo(k + 11 + (y1 - y0), y0); x.lineTo(k + (y1 - y0), y0); x.closePath(); x.fill(); }
+    x.restore();
+    x.fillStyle = pal.text; x.font = '800 64px -apple-system, Inter, system-ui, sans-serif';
+    x.fillText('IN CASE OF', w - 420, h - 70);
+    x.fillText('EMERGENCY', w - 400, h - 12);
+    return c;
+  }
+  const card = document.getElementById('card');
+  const btn = document.getElementById('break');
+  let surfaceCanvas = null;
+  function paint(){
+    const r = card.getBoundingClientRect();
+    surfaceCanvas = backdrop(r.width, r.height, Math.min(devicePixelRatio || 1, 2));
+    card.style.backgroundImage = `url(${surfaceCanvas.toDataURL()})`;
+  }
+  paint();
+  const surface = { get image(){ return surfaceCanvas; }, rect: () => card.getBoundingClientRect() };
+  const fx = window.__glassfx = ElementalFX.attachGlass(btn, { surface, tint: 'clear' });
+  let rt = 0;
+  new ResizeObserver(() => { clearTimeout(rt); rt = setTimeout(() => { paint(); fx.refresh && fx.refresh(); }, 120); }).observe(card);
+
+  document.querySelectorAll('.tints button').forEach(b => b.addEventListener('click', () => {
+    document.querySelectorAll('.tints button').forEach(o => o.setAttribute('aria-pressed', String(o === b)));
+    fx.setTint(b.dataset.tint, b.dataset.tint === 'stained' ? '#1f4fd1' : undefined);
+  }));
+
+  const mute = document.getElementById('mute');
+  mute.addEventListener('click', () => {
+    ElementalFX.glassAudio.muted = !ElementalFX.glassAudio.muted;
+    mute.textContent = ElementalFX.glassAudio.muted ? 'Sound off' : 'Sound on';
+    mute.setAttribute('aria-pressed', String(ElementalFX.glassAudio.muted));
+  });
+
+  let n = 0, tt = 0;
+  const pad = v => String(v).padStart(2, '0');
+  btn.addEventListener('click', () => {
+    n++;
+    const now = new Date(), exp = new Date(now.getTime() + 60 * 60000);
+    const hm = d => `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+    document.getElementById('exp').textContent = `${hm(exp)} today`;
+    const li = document.createElement('li');
+    li.innerHTML = `<b>${hm(now)}:${pad(now.getSeconds())}</b> break-glass grant #${4820 + n} &middot; owner &middot; prod-eu-west &middot; on-call paged`;
+    const log = document.getElementById('log');
+    log.prepend(li);
+    const t = document.getElementById('toast');
+    t.textContent = `Emergency access granted until ${hm(exp)}. Audit entry #${4820 + n}.`;
+    t.classList.add('on');
+    clearTimeout(tt); tt = setTimeout(() => t.classList.remove('on'), 2800);
+  });
+</script>
+</body>
+</html>

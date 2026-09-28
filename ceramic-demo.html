@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Moon Jar Tea Bowl</title>
+<style>
+  :root {
+    --bg: #f3eee6; --paper: #fbf8f3; --ink: #2a2521; --muted: #7a6f65; --line: #e2d9cc; --accent: #9a6b2f; --soft: #a0958a;
+    --sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", Inter, "Segoe UI", system-ui, sans-serif;
+    --serif: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body { background: var(--bg); color: var(--ink); font: 15px/1.55 var(--sans); -webkit-font-smoothing: antialiased; overflow-x: hidden; }
+  header { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 18px clamp(16px, 4vw, 44px); border-bottom: 1px solid var(--line); background: var(--paper); }
+  .brand { font: 600 19px/1 var(--serif); letter-spacing: .01em; }
+  .brand small { font: 500 11px/1 var(--sans); letter-spacing: .18em; text-transform: uppercase; color: var(--muted); margin-left: 8px; }
+  nav { display: flex; gap: 22px; color: var(--muted); font-size: 14px; }
+  nav a { color: inherit; text-decoration: none; }
+  .tools { display: flex; align-items: center; gap: 14px; font-size: 14px; color: var(--muted); }
+  .mute { border: 1px solid var(--line); background: none; color: var(--muted); font: inherit; font-size: 13px; padding: 5px 10px; border-radius: 999px; cursor: pointer; }
+  .mute[aria-pressed=true] { color: var(--ink); border-color: var(--soft); }
+  .cart b { color: var(--ink); font-variant-numeric: tabular-nums; }
+  main { max-width: 1060px; margin: 0 auto; padding: 40px clamp(16px, 4vw, 44px) 90px; display: grid; grid-template-columns: 1.05fr 1fr; gap: clamp(28px, 5vw, 64px); align-items: start; }
+  .crumbs { grid-column: 1 / -1; color: var(--soft); font-size: 13px; margin-bottom: -18px; }
+  .photo { background: radial-gradient(120% 90% at 50% 20%, #fffdf9 0%, #efe7da 70%, #e6dccd 100%); border-radius: 18px; aspect-ratio: 1 / 0.92; display: grid; place-items: center; border: 1px solid var(--line); position: relative; overflow: hidden; }
+  .photo svg { width: 78%; height: auto; }
+  .photo .tag { position: absolute; left: 16px; top: 14px; font-size: 12px; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
+  h1 { font: 500 34px/1.12 var(--serif); margin: 4px 0 6px; letter-spacing: -.01em; }
+  .by { color: var(--muted); margin: 0 0 16px; font-size: 14px; }
+  .price { font-size: 22px; font-weight: 600; margin: 0 0 18px; font-variant-numeric: tabular-nums; }
+  .price span { font-size: 14px; color: var(--muted); font-weight: 400; margin-left: 8px; }
+  p.desc { color: #4d453e; margin: 0 0 26px; max-width: 46ch; }
+  .glazes { margin: 0 0 50px; }
+  .glazes .lbl { font-size: 13px; color: var(--muted); margin-bottom: 10px; }
+  .glazes .lbl b { color: var(--ink); font-weight: 600; }
+  .sw { display: flex; gap: 10px; flex-wrap: wrap; }
+  .sw button { width: 34px; height: 34px; border-radius: 50%; border: 2px solid var(--paper); box-shadow: 0 0 0 1px var(--line); cursor: pointer; padding: 0; }
+  .sw button[aria-checked=true] { box-shadow: 0 0 0 2px var(--ink); }
+  .sw button:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+  .buy { display: flex; gap: 14px; align-items: center; }
+  .qty { display: flex; align-items: center; border: 1px solid var(--line); border-radius: 12px; height: 56px; background: var(--paper); flex: none; }
+  .qty span { width: 34px; text-align: center; font-variant-numeric: tabular-nums; }
+  .qty button { width: 32px; height: 100%; border: 0; background: none; color: var(--muted); font: inherit; font-size: 17px; cursor: pointer; padding: 0; border-radius: 10px; }
+  .qty button:hover { color: var(--ink); }
+  .qty button:disabled { opacity: .35; cursor: default; }
+  .qty button:focus-visible { outline: 2px solid var(--accent); outline-offset: -4px; }
+  .add { flex: 1; height: 56px; border-radius: 14px; border: 0; background: #1f2a44; color: #fff; font: 650 17px/1 var(--sans); letter-spacing: .01em; cursor: pointer; min-width: 0; }
+  .add:focus-visible { outline: 2px solid var(--accent); outline-offset: 7px; }
+  .hint { margin: 64px 0 0; font-size: 13px; color: var(--soft); }
+  ul.facts { list-style: none; padding: 0; margin: 26px 0 0; border-top: 1px solid var(--line); font-size: 14px; color: var(--muted); }
+  ul.facts li { display: flex; justify-content: space-between; padding: 11px 0; border-bottom: 1px solid var(--line); }
+  ul.facts li b { color: var(--ink); font-weight: 500; }
+  .toast { position: fixed; left: 50%; bottom: 26px; transform: translate(-50%, 20px); opacity: 0; transition: .35s ease; background: var(--ink); color: #fbf8f3;
+    padding: 12px 18px; border-radius: 12px; font-size: 15px; font-weight: 500; box-shadow: 0 16px 40px -12px rgba(0,0,0,.45); z-index: 50; pointer-events: none; white-space: nowrap; }
+  .toast.on { opacity: 1; transform: translate(-50%, 0); }
+  @media (max-width: 760px) {
+    nav { display: none; }
+    main { grid-template-columns: 1fr; padding-top: 22px; gap: 22px; }
+    .crumbs { margin-bottom: 0; }
+    h1 { font-size: 28px; }
+    .hint { margin-top: 56px; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <div class="brand">Hollow Kiln <small>Studio pottery</small></div>
+  <nav><a href="#">Tea ware</a><a href="#">Tableware</a><a href="#">Vases</a><a href="#">Mending</a></nav>
+  <div class="tools"><button class="mute" id="mute" type="button" aria-pressed="false">Sound on</button><span class="cart">Cart <b id="count">0</b></span></div>
+</header>
+<main>
+  <div class="crumbs">Tea ware / Bowls</div>
+  <div class="photo">
+    <span class="tag">Wheel thrown</span>
+    <svg viewBox="0 0 400 300" aria-hidden="true">
+      <defs>
+        <radialGradient id="gl" cx="38%" cy="30%" r="80%"><stop offset="0" id="g0"/><stop offset=".65" id="g1"/><stop offset="1" id="g2"/></radialGradient>
+        <linearGradient id="inner" x1="0" y1="0" x2="0" y2="1"><stop offset="0" id="i0"/><stop offset="1" id="i1"/></linearGradient>
+        <radialGradient id="sh" cx="50%" cy="50%" r="50%"><stop offset="0" stop-color="#6b5a45" stop-opacity=".35"/><stop offset="1" stop-color="#6b5a45" stop-opacity="0"/></radialGradient>
+      </defs>
+      <ellipse cx="200" cy="262" rx="150" ry="20" fill="url(#sh)"/>
+      <path d="M62 110 C 70 200, 130 250, 200 252 C 270 250, 330 200, 338 110 Z" fill="url(#gl)"/>
+      <path d="M150 248 C 160 262, 240 262, 250 248 L 246 240 C 230 250, 170 250, 154 240 Z" fill="#c9b8a0"/>
+      <ellipse cx="200" cy="110" rx="138" ry="30" fill="url(#inner)"/>
+      <ellipse cx="200" cy="110" rx="138" ry="30" fill="none" stroke="#fff" stroke-opacity=".55" stroke-width="2"/>
+      <path d="M95 140 C 105 190, 140 225, 178 236" fill="none" stroke="#fff" stroke-opacity=".45" stroke-width="7" stroke-linecap="round"/>
+      <path id="seam" d="M120 128 C 150 150, 160 175, 205 188 S 262 214, 282 232" fill="none" stroke="#c89b3c" stroke-width="2.4" stroke-linecap="round"/>
+    </svg>
+  </div>
+  <section>
+    <h1>Moon Jar Tea Bowl</h1>
+    <p class="by">Thrown and fired by Mina Okafor &middot; Bristol</p>
+    <p class="price">$64 <span>Free mending for life</span></p>
+    <p class="desc">A wide, low chawan with a soft foot and a thick glaze that pools in the well. Every bowl we sell is covered by our mending promise: if it breaks, send us the pieces and we rejoin them in gold.</p>
+    <div class="glazes">
+      <div class="lbl">Glaze: <b id="gname">Porcelain white</b></div>
+      <div class="sw" role="radiogroup" aria-label="Glaze" id="sw"></div>
+    </div>
+    <div class="buy">
+      <div class="qty" role="group" aria-label="Quantity"><button type="button" id="dec" aria-label="One fewer" disabled>&minus;</button><span id="qty" aria-live="polite">1</span><button type="button" id="inc" aria-label="One more">+</button></div>
+      <button class="add" id="add" type="button">Add to cart</button>
+    </div>
+    <p class="hint">Adding it to the cart breaks it. Pick up and toss the shards; leave them and they mend in gold.</p>
+    <ul class="facts">
+      <li>Size <b>13 cm across, 7 cm tall</b></li>
+      <li>Care <b>Dishwasher safe, microwave safe</b></li>
+      <li>Ships <b>In 3 to 5 days, double boxed</b></li>
+    </ul>
+  </section>
+</main>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+<script src="fx/ceramic.js"></script>
+<script>
+  const GL = [
+    { id: 'porcelain', name: 'Porcelain white', sw: '#eef0f1', bowl: ['#ffffff', '#e9ecee', '#c9d6da'], inner: ['#dfe7ea', '#f7f9fa'] },
+    { id: 'celadon', name: 'Celadon', sw: '#9dbfa8', bowl: ['#c2dcc9', '#98b9a3', '#577d68'], inner: ['#6e9580', '#b3d0bc'] },
+    { id: 'cobalt', name: 'Blue and white', sw: 'conic-gradient(#f3f4f6 0 50%, #20399a 0)', bowl: ['#ffffff', '#eceff4', '#c7d0e2'], inner: ['#dde4ef', '#f8f9fb'] },
+    { id: 'stoneware', name: 'Oatmeal stoneware', sw: '#d8cdb8', bowl: ['#e6dccb', '#d2c5ae', '#8f6f4f'], inner: ['#b9a68a', '#e2d7c4'] },
+    { id: 'terracotta', name: 'Terracotta', sw: '#b8623f', bowl: ['#d68a62', '#b8623f', '#7c3a22'], inner: ['#8d4428', '#c8744c'] },
+  ];
+  const btn = document.getElementById('add');
+  const fx = window.__cfx = ElementalFX.attachCeramic(btn, { glaze: 'porcelain' });
+  const sw = document.getElementById('sw');
+  const setStop = (id, c) => document.getElementById(id).setAttribute('stop-color', c);
+  function choose(g){
+    for (const b of sw.children) b.setAttribute('aria-checked', b.dataset.id === g.id);
+    document.getElementById('gname').textContent = g.name;
+    setStop('g0', g.bowl[0]); setStop('g1', g.bowl[1]); setStop('g2', g.bowl[2]); setStop('i0', g.inner[0]); setStop('i1', g.inner[1]);
+    fx.setGlaze(g.id);
+  }
+  for (const g of GL){
+    const b = document.createElement('button');
+    b.type = 'button'; b.setAttribute('role', 'radio'); b.dataset.id = g.id; b.style.background = g.sw; b.setAttribute('aria-label', g.name);
+    b.addEventListener('click', () => choose(g));
+    sw.appendChild(b);
+  }
+  choose(GL[0]);
+
+  const mute = document.getElementById('mute');
+  mute.addEventListener('click', () => {
+    const m = !ElementalFX.ceramicAudio.muted;
+    ElementalFX.ceramicAudio.muted = m;
+    mute.setAttribute('aria-pressed', m); mute.textContent = m ? 'Sound off' : 'Sound on';
+  });
+
+  let n = 0, tt = 0, q = 1;
+  const qEl = document.getElementById('qty'), dec = document.getElementById('dec'), inc = document.getElementById('inc');
+  const setQ = v => { q = Math.max(1, Math.min(9, v)); qEl.textContent = q; dec.disabled = q <= 1; inc.disabled = q >= 9; };
+  dec.addEventListener('click', () => setQ(q - 1));
+  inc.addEventListener('click', () => setQ(q + 1));
+  btn.addEventListener('click', () => {
+    n += q;
+    document.getElementById('count').textContent = n;
+    const t = document.getElementById('toast');
+    t.textContent = `Added to cart: ${q > 1 ? q + ' x ' : ''}Moon Jar Tea Bowl, ${document.getElementById('gname').textContent.toLowerCase()}`;
+    t.classList.add('on');
+    clearTimeout(tt); tt = setTimeout(() => t.classList.remove('on'), 2600);
+  });
+</script>
+</body>
+</html>
