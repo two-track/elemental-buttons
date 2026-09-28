@@ -18,6 +18,8 @@
 //   background: CSS colour to use instead of the detected one.
 //   labelColor: CSS colour for the label seen through the water (default: the button's colour, a bit darker).
 //   margin: CSS px of stage around the button (default max(140, 1.6 x button height)).
+//   area: an element whose box becomes the stage instead, so the drops can roam all of it (e.g. the hero
+//         section the button sits on). Its edges are the walls. Overrides margin.
 //   zIndex: of the stage canvas (default 10).   sound: false to stay silent.
 
 (() => {
@@ -614,10 +616,18 @@ function attachWater(button, opts = {}){
     const bw = r.width, bh = r.height;
     if (bw < 2 || bh < 2){ canvas.style.visibility = 'hidden'; G.bx = bx; G.by = by; return; }
     canvas.style.visibility = '';
-    const M = opts.margin ?? Math.round(Math.max(140, 1.6 * bh));
-    // the stage stays inside the document, so it can never add scrolling
-    const x0 = Math.floor(Math.min(bx, Math.max(0, bx - M))), y0 = Math.floor(Math.min(by, Math.max(0, by - M)));
-    const x1 = Math.ceil(Math.max(bx + bw, Math.min(bounds.w, bx + bw + M))), y1 = Math.ceil(Math.max(by + bh, Math.min(bounds.h, by + bh + M)));
+    let x0, y0, x1, y1;
+    if (opts.area){
+      const a = opts.area.getBoundingClientRect();
+      const ax = a.left + (G.fixed ? 0 : scrollX), ay = a.top + (G.fixed ? 0 : scrollY);
+      x0 = Math.floor(Math.min(bx, Math.max(0, ax))); y0 = Math.floor(Math.min(by, Math.max(0, ay)));
+      x1 = Math.ceil(Math.max(bx + bw, Math.min(bounds.w, ax + a.width))); y1 = Math.ceil(Math.max(by + bh, Math.min(bounds.h, ay + a.height)));
+    } else {
+      const M = opts.margin ?? Math.round(Math.max(140, 1.6 * bh));
+      // the stage stays inside the document, so it can never add scrolling
+      x0 = Math.floor(Math.min(bx, Math.max(0, bx - M))); y0 = Math.floor(Math.min(by, Math.max(0, by - M)));
+      x1 = Math.ceil(Math.max(bx + bw, Math.min(bounds.w, bx + bw + M))); y1 = Math.ceil(Math.max(by + bh, Math.min(bounds.h, by + bh + M)));
+    }
     const sw = x1 - x0, sh = y1 - y0;
     const sizeChanged = sw !== G.stageW || sh !== G.stageH;
     const btnChanged = Math.abs(bw - G.bw) > 0.25 || Math.abs(bh - G.bh) > 0.25;
@@ -1483,6 +1493,7 @@ function attachWater(button, opts = {}){
   const ro = new ResizeObserver(relayout);
   ro.observe(button);
   if (document.body) ro.observe(document.body);
+  if (opts.area) ro.observe(opts.area);
   const onScroll = () => { if (!lost) place(); };
   addEventListener('resize', relayout);
   document.addEventListener('scroll', onScroll, { capture: true, passive: true });

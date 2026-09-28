@@ -1,0 +1,358 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Flint Console</title>
+<style>
+  :root {
+    --bg: #15120f; --panel: #1d1915; --panel2: #231e19; --line: rgba(255,236,214,.08); --line2: rgba(255,236,214,.14);
+    --ink: #f1e8dc; --muted: #a79a8a; --soft: #75695c; --ok: #7fcf9a; --bad: #f08a78; --accent: #e8a45c;
+    --sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", Inter, "Segoe UI", system-ui, sans-serif;
+    --display: -apple-system, BlinkMacSystemFont, "SF Pro Display", Inter, "Segoe UI", system-ui, sans-serif;
+    --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body { background: var(--bg); color: var(--ink); font: 15px/1.55 var(--sans); -webkit-font-smoothing: antialiased; }
+
+  header { display: flex; align-items: center; justify-content: space-between; padding: 18px clamp(16px, 4vw, 40px);
+    border-bottom: 1px solid var(--line); }
+  .brand { font: 700 17px/1 var(--display); letter-spacing: -.01em; display: flex; align-items: center; gap: 10px; }
+  .brand i { width: 18px; height: 18px; border-radius: 5px; background: linear-gradient(160deg, #8e3a24, #4a1a10); display: block;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.12); }
+  nav { display: flex; align-items: center; gap: 22px; font-size: 14px; color: var(--muted); }
+  nav a { color: inherit; text-decoration: none; }
+  nav a[aria-current] { color: var(--ink); }
+  nav a:hover { color: var(--ink); }
+  #mute { width: 34px; height: 34px; border-radius: 50%; border: 1px solid var(--line2); background: transparent;
+    color: var(--muted); display: grid; place-items: center; cursor: pointer; padding: 0; }
+  #mute:hover { color: var(--ink); }
+  #mute svg { width: 16px; height: 16px; }
+  @media (max-width: 560px) { nav a { display: none; } }
+
+  main { max-width: 1040px; margin: 0 auto; padding: clamp(40px, 7vw, 72px) 16px 40px; }
+  .intro { max-width: 620px; margin: 0 0 clamp(90px, 12vw, 130px); }
+  .eyebrow { font-size: 12px; font-weight: 600; letter-spacing: .14em; text-transform: uppercase; color: var(--accent); margin: 0 0 12px; }
+  h1 { font: 700 clamp(30px, 5vw, 44px)/1.08 var(--display); letter-spacing: -.03em; margin: 0 0 14px; }
+  .lede { color: var(--muted); font-size: 16px; margin: 0; }
+
+  .grid { display: grid; gap: 24px; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); align-items: start; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 26px 26px 28px;
+    box-shadow: 0 1px 0 rgba(255,255,255,.03) inset, 0 24px 60px -40px rgba(0,0,0,.8); }
+  .card h2 { font: 650 17px/1.3 var(--display); margin: 0 0 4px; letter-spacing: -.01em; }
+  .card .sub { color: var(--muted); font-size: 13.5px; margin: 0 0 20px; }
+  .rows { list-style: none; margin: 0 0 30px; padding: 0; border-top: 1px solid var(--line); }
+  .rows li { display: flex; justify-content: space-between; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--line); font-size: 14px; }
+  .rows li span:first-child { color: var(--muted); }
+  .rows code { font: 13px var(--mono); color: var(--ink); }
+  .pill { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--ok); }
+  .pill::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+  .pill.warn { color: var(--accent); }
+  .total { font-weight: 650; }
+  .actions { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+  .hint { font-size: 12.5px; color: var(--soft); }
+
+  .strike { height: 52px; padding: 0 30px; border-radius: 12px; border: 0; background: #7a2a1b; color: #f4e6cf;
+    font: 650 17px/1 var(--display); letter-spacing: .005em; cursor: pointer; }
+  .strike:focus { outline: none; }
+  .strike:focus-visible { outline: 2px solid var(--accent); outline-offset: 5px; }
+  .strike[aria-busy="true"] { cursor: progress; }
+
+  .card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+  .seg { display: inline-flex; padding: 3px; gap: 2px; border-radius: 10px; background: var(--panel2); border: 1px solid var(--line); }
+  .seg button { border: 0; background: transparent; color: var(--muted); font: 500 12.5px/1 var(--sans); padding: 7px 10px; border-radius: 7px; cursor: pointer; }
+  .seg button:hover { color: var(--ink); }
+  .seg button[aria-checked="true"] { background: #3a2f26; color: var(--ink); box-shadow: 0 1px 0 rgba(255,255,255,.05) inset; }
+  .seg button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .flame-pref { display: flex; align-items: center; gap: 10px; margin: 22px 0 0; font-size: 12.5px; color: var(--soft); flex-wrap: wrap; }
+  .mini { height: 30px; padding: 0 12px; border-radius: 8px; border: 0; background: #6a2518; color: #f4e6cf;
+    font: 600 12.5px/1 var(--sans); cursor: pointer; }
+  .mini:focus { outline: none; }
+  .mini:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
+  .checks { display: flex; align-items: center; gap: 12px; }
+  .rows .checks .pill { color: var(--ok); }
+  .rows .checks .pill.warn { color: var(--accent); }
+  .drafts { list-style: none; margin: 0 0 30px; padding: 0; border-top: 1px solid var(--line); min-height: 124px; }
+  .drafts li { padding: 10px 0; border-bottom: 1px solid var(--line); font-size: 14px; display: flex; justify-content: space-between; gap: 12px; }
+  .drafts li span:last-child { color: var(--soft); font-size: 12.5px; white-space: nowrap; }
+  .drafts li:first-child span:first-child::before { content: "Next up · "; color: var(--accent); font-size: 12px; }
+  .drafts .empty { color: var(--soft); border-bottom: 0; }
+  .drafts li.gone span { color: var(--soft); text-decoration: line-through; text-decoration-color: rgba(240,138,120,.6); }
+  .drafts li.gone span:first-child::before { content: "Burning · "; color: var(--bad); text-decoration: none; display: inline-block; }
+  .link { background: none; border: 0; padding: 0; color: var(--accent); font: inherit; font-size: 12.5px; cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
+  .burn { background: #4a2a1e; }
+  .burn[disabled] { cursor: not-allowed; }
+
+  .log { margin-top: 44px; }
+  .log h3 { font: 600 13px/1 var(--sans); letter-spacing: .1em; text-transform: uppercase; color: var(--soft); margin: 0 0 12px; }
+  .log ol { list-style: none; margin: 0; padding: 0; font: 13px/1.5 var(--mono); color: var(--muted); }
+  .log li { padding: 7px 0; border-bottom: 1px solid var(--line); display: flex; gap: 14px; }
+  .log time { color: var(--soft); flex: none; }
+  .log .ok { color: var(--ok); } .log .bad { color: var(--bad); } .log .warn { color: var(--accent); }
+  footer { padding: 30px 16px 48px; text-align: center; font-size: 13px; color: var(--soft); }
+
+  .toast { position: fixed; left: 50%; bottom: 28px; z-index: 50; transform: translate(-50%, 20px); opacity: 0; pointer-events: none;
+    background: #f1e8dc; color: #1c1713; border-radius: 12px; padding: 12px 18px 12px 14px; font-size: 14.5px; font-weight: 500;
+    display: flex; align-items: center; gap: 10px; box-shadow: 0 14px 40px -12px rgba(0,0,0,.6);
+    transition: opacity .25s ease, transform .35s cubic-bezier(.2,.9,.3,1.2); max-width: calc(100vw - 32px); }
+  .toast.show { opacity: 1; transform: translate(-50%, 0); }
+  .toast svg { width: 20px; height: 20px; flex: none; }
+  .toast .x { display: none; } .toast.bad .x { display: block; } .toast.bad .v { display: none; }
+  @media (prefers-reduced-motion: reduce) { .toast { transition: opacity .2s; transform: translate(-50%, 0); } }
+</style>
+</head>
+<body>
+<header>
+  <div class="brand"><i></i>Flint</div>
+  <nav>
+    <a href="#" aria-current="page">Overview</a><a href="#">Deploys</a><a href="#">Billing</a>
+    <button id="mute" type="button" aria-label="Mute sound" aria-pressed="false">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M11 5 6 9H3v6h3l5 4z"/><path class="on" d="M15.5 8.5a5 5 0 0 1 0 7M18.5 5.5a9 9 0 0 1 0 13"/>
+        <path class="off" d="m16 9 6 6m0-6-6 6" style="display:none"/>
+      </svg>
+    </button>
+  </nav>
+</header>
+
+<main>
+  <section class="intro">
+    <p class="eyebrow">acme / storefront</p>
+    <h1>Ship it when it's ready.</h1>
+    <p class="lede">Everything below is live: the buttons are real buttons wired to real (pretend) requests. The flame burns for as long as the request takes.</p>
+  </section>
+
+  <div class="grid">
+    <section class="card" aria-labelledby="deploy-h">
+      <h2 id="deploy-h">Production</h2>
+      <p class="sub">storefront.acme.com</p>
+      <ul class="rows">
+        <li><span>Branch</span><code>main</code></li>
+        <li><span>Commit</span><code id="sha">a1f3c9e</code></li>
+        <li><span>Message</span><span>Fix cart total rounding</span></li>
+        <li><span>Checks</span><span class="checks"><span class="pill" id="checks">14 passed</span><button class="mini" id="rerun" type="button">Re-run</button></span></li>
+      </ul>
+      <div class="actions">
+        <button class="strike" id="deploy" type="button">Deploy</button>
+        <span class="hint">Takes about two seconds</span>
+      </div>
+      <div class="flame-pref">
+        <span id="flame-l">Flame</span>
+        <div class="seg" role="radiogroup" aria-labelledby="flame-l" id="scale">
+          <button type="button" role="radio" aria-checked="false" data-scale="match">Match</button>
+          <button type="button" role="radio" aria-checked="false" data-scale="candle">Candle</button>
+          <button type="button" role="radio" aria-checked="false" data-scale="campfire">Campfire</button>
+          <button type="button" role="radio" aria-checked="true" data-scale="bonfire">Bonfire</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="card" aria-labelledby="inv-h">
+      <h2 id="inv-h">Invoice INV-1042</h2>
+      <p class="sub">Globex Corporation &middot; due in 14 days</p>
+      <ul class="rows">
+        <li><span>Design retainer, March</span><span>$3,600.00</span></li>
+        <li><span>Hosting</span><span>$600.00</span></li>
+        <li><span>Mail server</span><span class="pill warn">degraded</span></li>
+        <li><span>Total</span><span class="total">$4,200.00</span></li>
+      </ul>
+      <div class="actions">
+        <button class="strike" id="send" type="button">Send invoice</button>
+        <span class="hint">This one will fail</span>
+      </div>
+    </section>
+
+    <section class="card" aria-labelledby="drafts-h">
+      <h2 id="drafts-h">Drafts</h2>
+      <p class="sub">Unsent release notes &middot; burned drafts can't be recovered</p>
+      <ul class="drafts" id="drafts"></ul>
+      <div class="actions">
+        <button class="strike burn" id="burn" type="button">Burn draft</button>
+        <button class="link" id="new-draft" type="button">New draft</button>
+      </div>
+    </section>
+  </div>
+
+  <section class="log" aria-labelledby="log-h">
+    <h3 id="log-h">Activity</h3>
+    <ol id="log"></ol>
+  </section>
+</main>
+<footer>Strike a button to send it. Swipe fast through a flame to call the request off; press and hold on a flame (or hold Space) to feed it until the button burns away.</footer>
+
+<div class="toast" id="toast" role="status" aria-live="polite">
+  <svg class="v" viewBox="0 0 24 24" fill="none" stroke="#2f8a52" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5 10 17 19 7.5"/></svg>
+  <svg class="x" viewBox="0 0 24 24" fill="none" stroke="#c2412c" stroke-width="2.4" stroke-linecap="round"><path d="M12 7v6M12 16.5v.5"/><circle cx="12" cy="12" r="9.5"/></svg>
+  <span></span>
+</div>
+
+<script src="fx/fire.js"></script>
+<script>
+(() => {
+  const { attachFire, fireAudio } = window.ElementalFX;
+  const logEl = document.getElementById('log');
+  const toast = document.getElementById('toast');
+  let hideT = 0;
+  function notify(msg, bad){
+    toast.querySelector('span').textContent = msg;
+    toast.classList.toggle('bad', !!bad);
+    toast.classList.add('show');
+    clearTimeout(hideT);
+    hideT = setTimeout(() => toast.classList.remove('show'), 3000);
+  }
+  function log(msg, cls){
+    const li = document.createElement('li');
+    const t = document.createElement('time');
+    t.textContent = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    const s = document.createElement('span');
+    s.textContent = msg; if (cls) s.className = cls;
+    li.append(t, s);
+    logEl.prepend(li);
+    while (logEl.children.length > 6) logEl.lastChild.remove();
+  }
+  log('Watching acme/storefront');
+
+  // pretend network: a request that takes 1.5-2.5 s, and can be called off
+  function request(ms, fails){
+    let timer, reject;
+    const p = new Promise((res, rej) => {
+      reject = rej;
+      timer = setTimeout(() => fails ? rej(new Error('SMTP 421: service not available')) : res(), ms);
+    });
+    p.abort = () => { clearTimeout(timer); reject(new DOMException('aborted', 'AbortError')); };
+    return p;
+  }
+
+  window.__clicks = { deploy: 0, send: 0, burn: 0, rerun: 0 };
+  let n = 214, inflight = {};
+  const deploy = document.getElementById('deploy');
+  const send = document.getElementById('send');
+  deploy.addEventListener('click', () => { window.__clicks.deploy++; });
+  send.addEventListener('click', () => { window.__clicks.send++; });
+
+  const fxDeploy = attachFire(deploy, {
+    successText: 'Live',
+    pending(){
+      const id = ++n, ms = 1500 + Math.random() * 1000;
+      log(`Deploy #${id} started`);
+      const t0 = performance.now();
+      const r = inflight.deploy = request(ms, false);
+      return r.then(() => {
+        const s = ((performance.now() - t0) / 1000).toFixed(1);
+        log(`Deploy #${id} is live (${s}s)`, 'ok');
+        notify(`Deployed a1f3c9e to production in ${s}s`);
+      }, err => { if (err.name !== 'AbortError') throw err; });
+    },
+    onCancel(){ inflight.deploy?.abort(); log('Deploy cancelled', 'warn'); notify('Deploy cancelled'); },
+  });
+  const fxSend = attachFire(send, {
+    successText: 'Sent',
+    failText: 'Not sent',
+    pending(){
+      log('Sending INV-1042 to billing@globex.com');
+      const r = inflight.send = request(1500 + Math.random() * 900, true);
+      return r.catch(err => {
+        if (err.name === 'AbortError') return;
+        log(`INV-1042 failed: ${err.message}`, 'bad');
+        notify("Couldn't send the invoice. The mail server isn't responding.", true);
+        throw err;
+      });
+    },
+    onCancel(){ inflight.send?.abort(); log('Send cancelled', 'warn'); },
+  });
+  // a quick secondary action, at match scale
+  const rerun = document.getElementById('rerun');
+  const checksEl = document.getElementById('checks');
+  rerun.addEventListener('click', () => { window.__clicks.rerun++; });
+  const fxRerun = attachFire(rerun, {
+    scale: 'match',
+    successText: 'Passed',
+    pending(){
+      checksEl.textContent = 'running…'; checksEl.classList.add('warn');
+      return request(1100 + Math.random() * 600, false).then(() => {
+        checksEl.textContent = '14 passed'; checksEl.classList.remove('warn');
+        log('Checks re-run on a1f3c9e: 14 passed', 'ok');
+      });
+    },
+  });
+
+  // a destructive action: success burns the button away, and it grows back for the next draft
+  const drafts = ['Spring pricing announcement', 'Changelog v2.14 (unreviewed)', 'Holiday shipping cut-offs'];
+  const spare = ['Onboarding email rewrite', 'Status page incident note', 'Partner newsletter, March'];
+  const draftsEl = document.getElementById('drafts');
+  const burnBtn = document.getElementById('burn');
+  // the burned row stays (struck through) until the button has grown back, so nothing moves under the fire
+  let gone = null;
+  function renderDrafts(){
+    draftsEl.textContent = '';
+    if (!drafts.length){
+      const li = document.createElement('li'); li.className = 'empty'; li.textContent = 'No drafts left.'; draftsEl.append(li);
+    }
+    drafts.forEach((d, i) => {
+      const li = document.createElement('li');
+      const a = document.createElement('span'); a.textContent = d;
+      const b = document.createElement('span'); b.textContent = `edited ${2 + i * 3}h ago`;
+      if (d === gone) li.className = 'gone';
+      li.append(a, b); draftsEl.append(li);
+    });
+    burnBtn.disabled = !drafts.length;
+  }
+  renderDrafts();
+  burnBtn.addEventListener('click', () => { window.__clicks.burn++; });
+  const fxBurn = attachFire(burnBtn, {
+    scale: 'campfire',
+    consume: 'onSuccess',
+    consumedText: 'Draft burned',
+    onConsumed(){
+      if (gone === null) return;
+      const i = drafts.indexOf(gone);
+      if (i >= 0) drafts.splice(i, 1);
+      gone = null; renderDrafts();
+    },
+    pending(){
+      const title = drafts.find(d => d !== gone);
+      return request(700 + Math.random() * 400, false).then(() => {
+        gone = title; renderDrafts();
+        log(`Burned draft “${title}”`, 'warn');
+        notify(`Burned “${title}”`);
+      });
+    },
+  });
+  document.getElementById('new-draft').addEventListener('click', () => {
+    drafts.push(spare.length ? spare.shift() : `Untitled draft ${drafts.length + 1}`);
+    renderDrafts();
+  });
+
+  // flame size for the main action, remembered per visitor
+  const seg = document.getElementById('scale');
+  function setScale(v){
+    for (const b of seg.querySelectorAll('button')){ const on = b.dataset.scale === v; b.setAttribute('aria-checked', String(on)); b.tabIndex = on ? 0 : -1; }
+    fxDeploy.setScale(v);
+    try { localStorage.setItem('flint.flame', v); } catch {}
+  }
+  seg.addEventListener('click', e => { const b = e.target.closest('button[data-scale]'); if (b) setScale(b.dataset.scale); });
+  seg.addEventListener('keydown', e => {
+    if (!['ArrowLeft', 'ArrowRight'].includes(e.key)) return;
+    const bs = [...seg.querySelectorAll('button')], i = bs.findIndex(b => b.getAttribute('aria-checked') === 'true');
+    const n = bs[(i + (e.key === 'ArrowRight' ? 1 : bs.length - 1)) % bs.length];
+    setScale(n.dataset.scale); n.focus(); e.preventDefault();
+  });
+  let saved = null;
+  try { saved = localStorage.getItem('flint.flame'); } catch {}
+  setScale(saved && seg.querySelector(`[data-scale="${saved}"]`) ? saved : 'bonfire');
+
+  window.__fx = { deploy: fxDeploy, send: fxSend, rerun: fxRerun, burn: fxBurn };
+
+  const mute = document.getElementById('mute');
+  mute.addEventListener('click', () => {
+    fireAudio.muted = !fireAudio.muted;
+    mute.setAttribute('aria-pressed', String(fireAudio.muted));
+    mute.setAttribute('aria-label', fireAudio.muted ? 'Unmute sound' : 'Mute sound');
+    mute.querySelector('.on').style.display = fireAudio.muted ? 'none' : '';
+    mute.querySelector('.off').style.display = fireAudio.muted ? '' : 'none';
+  });
+})();
+</script>
+</body>
+</html>

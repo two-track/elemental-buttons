@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Airmail</title>
+<style>
+  :root {
+    --ink: #232a3a; --muted: #5d6578; --soft: #8a91a2; --bg: #eef1f6; --card: #fbfbfd; --line: rgba(35,42,58,.09);
+    --sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", Inter, "Segoe UI", system-ui, sans-serif;
+    --display: -apple-system, BlinkMacSystemFont, "SF Pro Display", Inter, "Segoe UI", system-ui, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body { background: var(--bg); color: var(--ink); font: 16px/1.55 var(--sans); -webkit-font-smoothing: antialiased; }
+
+  header { display: flex; align-items: center; justify-content: space-between; padding: 20px clamp(16px, 4vw, 40px); }
+  .brand { font: 700 18px/1 var(--display); letter-spacing: -.01em; display: flex; align-items: center; gap: 9px; }
+  .brand i { width: 17px; height: 17px; border-radius: 50%; display: block;
+    background: radial-gradient(circle at 35% 30%, #fff 0 18%, transparent 30%), conic-gradient(from 40deg, #f6a8d8, #a8e0f6, #f6e3a8, #c5a8f6, #f6a8d8);
+    box-shadow: inset 0 0 0 1px rgba(35,42,58,.15); }
+  nav { display: flex; align-items: center; gap: 22px; font-size: 14px; color: var(--muted); }
+  nav a { color: inherit; text-decoration: none; }
+  nav a:hover { color: var(--ink); }
+  #mute { width: 34px; height: 34px; border-radius: 50%; border: 1px solid var(--line); background: rgba(255,255,255,.6);
+    color: var(--ink); display: grid; place-items: center; cursor: pointer; padding: 0; }
+  #mute svg { width: 16px; height: 16px; }
+  @media (max-width: 560px) { nav a { display: none; } }
+
+  .hero { max-width: 1040px; margin: 0 auto; padding: clamp(40px, 8vw, 90px) 16px 60px; display: grid; gap: clamp(40px, 6vw, 80px);
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); align-items: center; }
+  .eyebrow { font-size: 12px; font-weight: 600; letter-spacing: .16em; text-transform: uppercase; color: #7d6bb0; margin: 0 0 16px; }
+  h1 { font: 700 clamp(34px, 5.6vw, 56px)/1.03 var(--display); letter-spacing: -.035em; margin: 0 0 18px; }
+  .lede { font-size: clamp(16px, 2vw, 18px); color: var(--muted); margin: 0; max-width: 28em; }
+
+  .card { background: var(--card); border-radius: 22px; padding: 26px 26px 30px; border: 1px solid var(--line);
+    box-shadow: 0 30px 70px -45px rgba(40,50,90,.35); max-width: 440px; width: 100%; justify-self: center; }
+  .to { display: flex; align-items: center; gap: 12px; padding-bottom: 16px; border-bottom: 1px solid var(--line); margin-bottom: 16px; }
+  .avatar { width: 38px; height: 38px; border-radius: 50%; background: linear-gradient(140deg, #bfd8f7, #e8c9ef); display: grid; place-items: center;
+    font: 650 14px/1 var(--display); color: #3b4260; }
+  .to b { display: block; font-size: 15px; }
+  .to span { font-size: 13px; color: var(--soft); }
+  textarea { width: 100%; min-height: 108px; resize: none; border: 0; background: transparent; font: inherit; color: var(--ink); padding: 0; outline: none; }
+  .row { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 22px; }
+  .row small { color: var(--soft); font-size: 12.5px; }
+  .send { height: 54px; padding: 0 36px; border-radius: 999px; border: 1px solid rgba(35,42,58,.14); background: #fff;
+    color: #2b3350; font: 650 17px/1 var(--display); letter-spacing: -.005em; cursor: pointer; }
+  .send:focus { outline: none; }
+  .send:focus-visible { outline: 2px solid var(--ink); outline-offset: 8px; }
+
+  .features { max-width: 980px; margin: 0 auto; padding: 60px 16px 72px; display: grid; gap: 36px; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
+  .features h3 { font: 650 17px/1.3 var(--display); margin: 0 0 6px; }
+  .features p { margin: 0; color: var(--muted); font-size: 15px; }
+  footer { padding: 30px 16px 48px; text-align: center; font-size: 13px; color: var(--soft); }
+
+  .toast { position: fixed; left: 50%; bottom: 28px; z-index: 50; transform: translate(-50%, 20px); opacity: 0; pointer-events: none;
+    background: var(--ink); color: #fff; border-radius: 999px; padding: 13px 22px 13px 16px; font-size: 15px; font-weight: 500;
+    display: flex; align-items: center; gap: 10px; box-shadow: 0 14px 40px -12px rgba(0,0,0,.35);
+    transition: opacity .25s ease, transform .35s cubic-bezier(.2,.9,.3,1.2); max-width: calc(100vw - 32px); }
+  .toast.show { opacity: 1; transform: translate(-50%, 0); }
+  .toast svg { width: 20px; height: 20px; flex: none; }
+  @media (prefers-reduced-motion: reduce) { .toast { transition: opacity .2s; transform: translate(-50%, 0); } }
+</style>
+</head>
+<body>
+<header>
+  <div class="brand"><i></i>Airmail</div>
+  <nav>
+    <a href="#how">How it works</a><a href="#how">Pricing</a>
+    <button id="mute" type="button" aria-label="Mute sound" aria-pressed="false">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M11 5 6 9H3v6h3l5 4z"/><path class="on" d="M15.5 8.5a5 5 0 0 1 0 7M18.5 5.5a9 9 0 0 1 0 13"/>
+        <path class="off" d="m16 9 6 6m0-6-6 6" style="display:none"/>
+      </svg>
+    </button>
+  </nav>
+</header>
+
+<main>
+  <section class="hero">
+    <div>
+      <p class="eyebrow">Notes that float</p>
+      <h1>Say it lightly.</h1>
+      <p class="lede">Short notes to the people you like, delivered the moment you let go. Stir the air near the button, then press it.</p>
+    </div>
+    <div class="card">
+      <div class="to"><div class="avatar">MR</div><div><b>Mara Reyes</b><span>mara@example.com</span></div></div>
+      <textarea aria-label="Message">Found the little bakery you told me about. The cardamom buns are unreal. Saturday?</textarea>
+      <div class="row">
+        <small>Tap the small bubbles to pop them.</small>
+        <button class="send" id="send" type="button">Send note</button>
+      </div>
+    </div>
+  </section>
+
+  <section class="features" id="how">
+    <div><h3>A real button underneath</h3><p>Focus, keyboard and click handlers all belong to a native button. The bubble is only paint.</p></div>
+    <div><h3>Thin-film light</h3><p>Colours come from interference in a draining soap film, computed live on the GPU.</p></div>
+    <div><h3>Falls back quietly</h3><p>Without WebGL2 you get an ordinary button. Nothing breaks.</p></div>
+  </section>
+</main>
+<footer>Airmail is a design study.</footer>
+
+<div class="toast" id="toast" role="status" aria-live="polite">
+  <svg viewBox="0 0 24 24" fill="none" stroke="#b9e3f5" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5 10 17 19 7.5"/></svg>
+  <span></span>
+</div>
+
+<script src="fx/bubble.js"></script>
+<script>
+(() => {
+  const { attachBubble, bubbleAudio } = window.ElementalFX;
+  const send = document.getElementById('send');
+  const fx = attachBubble(send);
+  window.__fx = fx;
+
+  const toast = document.getElementById('toast');
+  let hideT = 0;
+  window.__clicks = 0;
+  send.addEventListener('click', () => {
+    window.__clicks++;
+    toast.querySelector('span').textContent = 'Note sent to Mara.';
+    toast.classList.add('show');
+    clearTimeout(hideT);
+    hideT = setTimeout(() => toast.classList.remove('show'), 2600);
+  });
+
+  const mute = document.getElementById('mute');
+  mute.addEventListener('click', () => {
+    bubbleAudio.muted = !bubbleAudio.muted;
+    mute.setAttribute('aria-pressed', String(bubbleAudio.muted));
+    mute.setAttribute('aria-label', bubbleAudio.muted ? 'Unmute sound' : 'Mute sound');
+    mute.querySelector('.on').style.display = bubbleAudio.muted ? 'none' : '';
+    mute.querySelector('.off').style.display = bubbleAudio.muted ? '' : 'none';
+  });
+})();
+</script>
+</body>
+</html>

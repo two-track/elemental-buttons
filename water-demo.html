@@ -132,7 +132,7 @@
 
   const start = document.getElementById('start');
   const submit = document.querySelector('#beta-form .cta');
-  const fxStart = attachWater(start, { surface });
+  const fxStart = attachWater(start, { surface, area: hero });
   const fxBeta = attachWater(submit);
   window.__fx = { start: fxStart, beta: fxBeta };
 

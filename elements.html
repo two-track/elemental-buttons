@@ -1,0 +1,408 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fieldwork</title>
+<style>
+  :root {
+    --bg: #f3f2ef; --card: #ffffff; --ink: #1d2126; --muted: #646a72; --soft: #969ba3; --line: #e3e1dc;
+    --dark: #16181b; --dark2: #1e2125; --dline: rgba(255,255,255,.08); --dink: #eceae6; --dmuted: #9aa0a8;
+    --accent: #2f5bd3; --danger: #c3392f; --danger-ink: #a2281f; --danger-bg: #fdf3f2; --danger-line: #f1cdc9;
+    --sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", Inter, "Segoe UI", system-ui, sans-serif;
+    --display: -apple-system, BlinkMacSystemFont, "SF Pro Display", Inter, "Segoe UI", system-ui, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body { background: var(--bg); color: var(--ink); font: 15px/1.55 var(--sans); -webkit-font-smoothing: antialiased; overflow-x: hidden; }
+  a { color: inherit; }
+
+  header.top { position: sticky; top: 0; z-index: 50; display: flex; align-items: center; justify-content: space-between;
+    padding: 14px clamp(16px, 4vw, 40px); background: rgba(243,242,239,.82); backdrop-filter: blur(10px); border-bottom: 1px solid var(--line); }
+  .brand { display: flex; align-items: center; gap: 10px; font: 700 16px/1 var(--display); letter-spacing: -.01em; text-decoration: none; }
+  .brand i { width: 18px; height: 18px; border-radius: 6px; background: conic-gradient(from 200deg, #3d7bd9, #e0672e, #7d6a55, #2a2c30, #3d7bd9); display: block; }
+  nav.links { display: flex; gap: 22px; font-size: 14px; color: var(--muted); }
+  nav.links a { text-decoration: none; }
+  nav.links a:hover { color: var(--ink); }
+  #mute { width: 34px; height: 34px; border-radius: 50%; border: 1px solid var(--line); background: rgba(255,255,255,.6); color: var(--ink);
+    display: grid; place-items: center; cursor: pointer; }
+  #mute svg { width: 16px; height: 16px; }
+  @media (max-width: 720px) { nav.links { display: none; } }
+
+  /* hero on concrete: the water button refracts this same image */
+  .hero { position: relative; padding: clamp(80px, 12vw, 140px) 16px clamp(90px, 13vw, 150px); text-align: center; background-color: #bdbab4; background-size: cover; }
+  .hero .eyebrow { font-size: 12px; letter-spacing: .16em; text-transform: uppercase; font-weight: 600; color: #3b3f45; margin: 0 auto 14px; }
+  .hero h1 { font: 700 clamp(36px, 6vw, 64px)/1.03 var(--display); letter-spacing: -.03em; margin: 0 auto 16px; max-width: 13ch; color: #1b1e22; }
+  .hero p { max-width: 520px; margin: 0 auto 38px; color: #33373d; font-size: 17px; }
+  .water { height: 56px; padding: 0 34px; border-radius: 999px; border: 1px solid rgba(29,42,49,.14); background: rgba(255,255,255,.72);
+    color: var(--ink); font: 600 17px/1 var(--display); cursor: pointer; }
+  .water:focus { outline: none; } .water:focus-visible { outline: 2px solid var(--ink); outline-offset: 8px; }
+
+  main { max-width: 1120px; margin: 0 auto; padding: 64px clamp(16px, 4vw, 40px) 120px; }
+  .intro { max-width: 620px; margin: 0 0 40px; }
+  .intro h2 { font: 700 30px/1.15 var(--display); letter-spacing: -.02em; margin: 0 0 10px; }
+  .intro p { margin: 0; color: var(--muted); }
+  .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; }
+  .wide { grid-column: 1 / -1; }
+  @media (max-width: 820px) { .grid { grid-template-columns: 1fr; } }
+
+  .card { position: relative; background: var(--card); border: 1px solid var(--line); border-radius: 20px; padding: 30px clamp(20px, 3vw, 34px) 34px;
+    box-shadow: 0 1px 0 rgba(255,255,255,.7) inset, 0 20px 50px -34px rgba(20,24,30,.35); }
+  .card.dark { background: var(--dark); border-color: var(--dline); color: var(--dink); }
+  .card h3 { font: 700 22px/1.2 var(--display); letter-spacing: -.015em; margin: 0 0 8px; }
+  .card p { margin: 0 0 24px; color: var(--muted); }
+  .card.dark p { color: var(--dmuted); }
+  .tag { position: absolute; top: 18px; right: 20px; font-size: 11px; letter-spacing: .12em; text-transform: uppercase; font-weight: 600;
+    color: var(--soft); border: 1px solid var(--line); border-radius: 999px; padding: 4px 9px; }
+  .card.dark .tag { color: var(--dmuted); border-color: var(--dline); }
+  .eyebrow2 { font-size: 12px; letter-spacing: .14em; text-transform: uppercase; font-weight: 600; color: var(--soft); margin: 0 0 10px; }
+  .center { display: grid; place-items: center; padding: 18px 0 6px; }
+
+  /* ferrofluid: product reservation */
+  .product { display: grid; grid-template-columns: 96px 1fr; gap: 18px; align-items: center; margin-bottom: 22px; }
+  .orb { width: 96px; height: 96px; border-radius: 26px; background: radial-gradient(circle at 35% 30%, #5d6066, #0b0b0c 62%); box-shadow: 0 16px 30px -18px #000; }
+  .price { font: 700 26px/1 var(--display); letter-spacing: -.02em; }
+  .price small { font-size: 13px; color: var(--muted); font-weight: 500; letter-spacing: 0; }
+  .ferro { height: 60px; padding: 0 42px; border-radius: 999px; border: 0; background: #111; color: #fff; font: 700 18px/1 var(--display); cursor: pointer; }
+  .ferro:focus { outline: none; } .ferro:focus-visible { outline: 2px solid var(--ink); outline-offset: 10px; }
+
+  /* bubble: compose */
+  .compose { border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px; margin-bottom: 22px; background: #fbfbfd; }
+  .compose .to { font-size: 13px; color: var(--muted); border-bottom: 1px solid var(--line); padding-bottom: 8px; margin-bottom: 10px; }
+  .compose textarea { width: 100%; min-height: 84px; resize: none; border: 0; background: transparent; font: inherit; color: var(--ink); padding: 0; outline: none; }
+  .bubble { height: 54px; padding: 0 36px; border-radius: 999px; border: 1px solid rgba(35,42,58,.14); background: #fff; color: #232a3a;
+    font: 600 17px/1 var(--display); cursor: pointer; }
+  .bubble:focus { outline: none; } .bubble:focus-visible { outline: 2px solid var(--ink); outline-offset: 8px; }
+
+  /* sand: newsletter */
+  form.row { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
+  input[type=email] { flex: 1 1 200px; min-width: 0; height: 52px; border-radius: 12px; border: 1px solid var(--line); background: #fff; padding: 0 16px; font: inherit; color: var(--ink); }
+  input[type=email]:focus { outline: 2px solid #8a6a45; outline-offset: 1px; }
+  .sand { height: 52px; padding: 0 28px; border-radius: 14px; border: 0; background: #8f7458; color: #fff; font: 700 18px/1 var(--display); cursor: pointer; }
+  .sand:focus-visible { outline: 2px solid var(--ink); outline-offset: 6px; }
+
+  /* ice: pause plan (dark, painted backdrop so the ice has something to refract) */
+  #icecard { background-color: #0f1d2e; background-size: cover; border-color: rgba(160,200,240,.14); }
+  .plan { display: flex; justify-content: space-between; padding: 12px 14px; border-radius: 12px; background: rgba(8,18,32,.55); border: 1px solid rgba(160,200,240,.14); margin-bottom: 26px; font-size: 14px; }
+  .plan span { color: #93a6bd; }
+  .ice { height: 60px; padding: 0 34px; border-radius: 14px; border: 0; background: #bfe6ff; color: #0b2340; font: 700 18px/1 var(--display); cursor: pointer; }
+  .ice:focus-visible { outline: 2px solid #8fd3ff; outline-offset: 8px; }
+
+  /* fire: deploys */
+  .deploy { display: grid; grid-template-columns: 1.2fr 1fr; gap: 28px; align-items: start; }
+  @media (max-width: 820px) { .deploy { grid-template-columns: 1fr; } }
+  .meta { list-style: none; margin: 0 0 26px; padding: 0; border: 1px solid var(--dline); border-radius: 12px; }
+  .meta li { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 11px 14px; border-top: 1px solid var(--dline); font-size: 14px; }
+  .meta li:first-child { border-top: 0; }
+  .meta li > span:first-child { color: var(--dmuted); }
+  .pill { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: #9ad19a; }
+  .pill::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+  .actions { display: flex; gap: 14px; flex-wrap: wrap; align-items: center; padding-top: 60px; }
+  .strike { height: 52px; padding: 0 30px; border-radius: 12px; border: 0; background: #7a2a1b; color: #f4e6cf; font: 700 17px/1 var(--display); cursor: pointer; }
+  .strike.draft { background: #4a2a1e; }
+  .strike:focus { outline: none; } .strike:focus-visible { outline: 2px solid #f0a45a; outline-offset: 5px; }
+  .strike[aria-busy="true"] { cursor: progress; }
+  .mini { height: 30px; padding: 0 12px; border-radius: 8px; border: 0; background: #6a2518; color: #f4e6cf; font: 600 12.5px/1 var(--sans); cursor: pointer; }
+  .mini:focus { outline: none; } .mini:focus-visible { outline: 2px solid #f0a45a; outline-offset: 4px; }
+  .log { list-style: none; margin: 0; padding: 0; font: 12.5px/1.5 ui-monospace, "SF Mono", Menlo, monospace; color: var(--dmuted); }
+  .log li { display: flex; gap: 10px; padding: 4px 0; border-top: 1px solid var(--dline); }
+  .log li:first-child { border-top: 0; }
+  .log time { color: #6d737b; flex: none; }
+  .log .ok { color: #9ad19a; } .log .bad { color: #ff8e84; } .log .warn { color: #e8c07a; }
+
+  /* rock: danger zone */
+  .card.danger { border-color: var(--danger-line); }
+  .card.danger h3 { color: var(--danger-ink); }
+  .danger-row { display: flex; align-items: center; justify-content: space-between; gap: 24px; flex-wrap: wrap; }
+  .danger-row .txt { flex: 1 1 280px; }
+  .danger-row b { display: block; font-size: 15px; margin-bottom: 2px; }
+  .danger-row span { color: var(--muted); font-size: 14px; }
+  .rock { height: 46px; padding: 0 24px; border-radius: 10px; border: 0; background: var(--danger); color: #fff; font: 700 15px/1 var(--display); cursor: pointer; }
+  .rock:focus-visible { outline: 2px solid var(--danger-ink); outline-offset: 6px; }
+  .confirm { margin-top: 20px; padding: 16px; border-radius: 12px; background: var(--danger-bg); border: 1px solid var(--danger-line); display: none; gap: 12px; align-items: center; flex-wrap: wrap; }
+  .confirm.show { display: flex; }
+  .confirm p { margin: 0; flex: 1 1 240px; color: var(--ink); font-size: 14px; }
+  .btn { height: 36px; padding: 0 16px; border-radius: 9px; border: 1px solid var(--line); background: #fff; color: var(--ink); font: 600 14px/1 var(--sans); cursor: pointer; }
+  .btn.really { background: var(--danger); color: #fff; border-color: transparent; }
+
+  footer { max-width: 1120px; margin: 0 auto; padding: 0 clamp(16px, 4vw, 40px) 60px; color: var(--soft); font-size: 13px; }
+
+  #toast { position: fixed; left: 50%; bottom: 28px; transform: translate(-50%, 20px); opacity: 0; pointer-events: none; transition: .25s;
+    background: var(--ink); color: #fff; border-radius: 999px; padding: 13px 22px; font-size: 15px; font-weight: 500; z-index: 100; max-width: calc(100% - 32px); }
+  #toast.bad { background: #8f2a22; }
+  #toast.show { opacity: 1; transform: translate(-50%, 0); }
+</style>
+</head>
+<body>
+<header class="top">
+  <a class="brand" href="#"><i></i>Fieldwork</a>
+  <nav class="links"><a href="#product">Product</a><a href="#deploys">Deploys</a><a href="#account">Account</a></nav>
+  <button id="mute" type="button" aria-label="Mute sound" aria-pressed="false">
+    <svg class="on" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H3v6h3l5 4z"/><path d="M15.5 8.5a5 5 0 0 1 0 7M18.5 5.5a9 9 0 0 1 0 13"/></svg>
+    <svg class="off" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:none"><path d="M11 5 6 9H3v6h3l5 4z"/><path d="m22 9-6 6M16 9l6 6"/></svg>
+  </button>
+</header>
+
+<section class="hero" id="hero">
+  <p class="eyebrow">Fieldwork 3.0</p>
+  <h1>Interfaces with real material.</h1>
+  <p>Every button on this page is an ordinary &lt;button&gt;. They just happen to be made of water, sand, stone, fire, ferrofluid, soap film and ice.</p>
+  <button class="water" id="start" type="button">Get started</button>
+</section>
+
+<main>
+  <div class="intro" id="product">
+    <h2>Try pressing things.</h2>
+    <p>Each one does its real job: the form submits, the deploy runs, the account asks before it goes. Drag, poke and smash them; they put themselves back together.</p>
+  </div>
+
+  <div class="grid">
+    <section class="card">
+      <span class="tag">Ferrofluid</span>
+      <p class="eyebrow2">Lodestone speaker</p>
+      <div class="product"><div class="orb" aria-hidden="true"></div>
+        <div><h3>A speaker that dances.</h3><div class="price">$349 <small>ships in March</small></div></div></div>
+      <p>Your cursor is a magnet. Move near the button, flick past it, press and hold.</p>
+      <div class="center"><button class="ferro" id="reserve" type="button">Reserve yours</button></div>
+    </section>
+
+    <section class="card">
+      <span class="tag">Soap bubble</span>
+      <p class="eyebrow2">Quick note</p>
+      <h3>Send Mara a thank-you.</h3>
+      <div class="compose">
+        <div class="to">To: Mara Lindqvist</div>
+        <textarea aria-label="Message">Thanks for the notes on the launch deck. The new flow is so much clearer.</textarea>
+      </div>
+      <div class="center"><button class="bubble" id="send" type="button">Send note</button></div>
+    </section>
+
+    <section class="card">
+      <span class="tag">Sand</span>
+      <p class="eyebrow2">Field notes</p>
+      <h3>One letter a month about slow design.</h3>
+      <p>Essays, sketches and the odd recipe. Press the button, or drag a finger through it.</p>
+      <form class="row" id="signup">
+        <input type="email" required placeholder="you@example.com" aria-label="Email address">
+        <button class="sand" id="subscribe" type="submit">Subscribe</button>
+      </form>
+    </section>
+
+    <section class="card dark" id="icecard">
+      <span class="tag">Ice</span>
+      <p class="eyebrow2" style="color:#93a6bd">Northwind Coffee Club</p>
+      <h3>Put your plan on ice.</h3>
+      <div class="plan"><b>Roaster's choice, 2 bags / month</b><span>$38</span></div>
+      <div class="center"><button class="ice" id="freeze" type="button">Freeze my plan</button></div>
+    </section>
+
+    <section class="card dark wide" id="deploys">
+      <span class="tag">Fire</span>
+      <p class="eyebrow2" style="color:#9aa0a8">acme/storefront</p>
+      <div class="deploy">
+        <div>
+          <h3>Ship it.</h3>
+          <p>Strike to deploy; the flame burns while the build runs. Swipe across it fast to blow it out and cancel.</p>
+          <ul class="meta">
+            <li><span>Branch</span><span>main · a1f3c9e</span></li>
+            <li><span>Checks</span><span style="display:flex;gap:10px;align-items:center"><span class="pill" id="checks">14 passed</span><button class="mini" id="rerun" type="button">Re-run</button></span></li>
+            <li><span>Draft</span><span style="color:#9aa0a8">release-notes-v3.md</span></li>
+          </ul>
+          <div class="actions">
+            <button class="strike" id="deploy" type="button">Deploy</button>
+            <button class="strike draft" id="burn" type="button">Burn draft</button>
+          </div>
+        </div>
+        <ul class="log" id="log" aria-live="polite"></ul>
+      </div>
+    </section>
+
+    <section class="card danger wide" id="account">
+      <span class="tag">Stone</span>
+      <h3>Danger zone</h3>
+      <div class="danger-row">
+        <div class="txt"><b>Delete account</b><span>Permanently remove your workspace, projects and billing history.</span></div>
+        <button class="rock" id="delete" type="button" aria-controls="confirm" aria-expanded="false">Delete account</button>
+      </div>
+      <div class="confirm" id="confirm">
+        <p>This cannot be undone. Delete the Fieldwork workspace?</p>
+        <button class="btn" id="keep" type="button">Keep it</button>
+        <button class="btn really" id="really" type="button">Delete for good</button>
+      </div>
+    </section>
+  </div>
+</main>
+<footer>Fieldwork is a made-up company. The buttons are real.</footer>
+<div id="toast" role="status" aria-live="polite"><span></span></div>
+
+<script src="fx/water.js"></script>
+<script src="fx/sand.js"></script>
+<script src="fx/rock.js"></script>
+<script src="fx/fire.js"></script>
+<script src="fx/ferro.js"></script>
+<script src="fx/bubble.js"></script>
+<script src="fx/ice.js"></script>
+<script>
+(() => {
+  const FX = window.ElementalFX;
+  const $ = id => document.getElementById(id);
+  const toast = $('toast');
+  let hideT = 0;
+  function notify(msg, bad){
+    toast.querySelector('span').textContent = msg;
+    toast.classList.toggle('bad', !!bad);
+    toast.classList.add('show');
+    clearTimeout(hideT);
+    hideT = setTimeout(() => toast.classList.remove('show'), 2800);
+  }
+  const fx = window.__fx = {};
+  window.__clicks = {};
+  const count = k => { window.__clicks[k] = (window.__clicks[k] || 0) + 1; };
+
+  // water: the hero is concrete, and the water refracts that same image
+  const hero = $('hero');
+  const surface = { image: null, rect: () => hero.getBoundingClientRect() };
+  let heroUrl = null;
+  function paintConcrete(){
+    const r = hero.getBoundingClientRect();
+    surface.image = FX.concreteCanvas(Math.ceil(r.width), Math.ceil(r.height));
+    surface.image.toBlob(b => {
+      if (!b) return;
+      if (heroUrl) URL.revokeObjectURL(heroUrl);
+      heroUrl = URL.createObjectURL(b);
+      hero.style.backgroundImage = `url(${heroUrl})`;
+    });
+  }
+  paintConcrete();
+  fx.water = FX.attachWater($('start'), { surface, area: hero });
+  $('start').addEventListener('click', () => { count('water'); notify('Welcome aboard. Your workspace is ready.'); });
+
+  // ice: a frosty backdrop painted once for the card, so the ice has something to refract
+  const icecard = $('icecard');
+  function frostCanvas(w, h, s){
+    const c = document.createElement('canvas');
+    c.width = Math.round(w * s); c.height = Math.round(h * s);
+    const x = c.getContext('2d');
+    x.scale(s, s);
+    const g = x.createLinearGradient(0, 0, w, h);
+    g.addColorStop(0, '#15293f'); g.addColorStop(1, '#0f1d2e');
+    x.fillStyle = g; x.fillRect(0, 0, w, h);
+    const glow = x.createRadialGradient(w * .85, h * .1, 0, w * .85, h * .1, w * .7);
+    glow.addColorStop(0, 'rgba(120,220,255,.16)'); glow.addColorStop(1, 'rgba(120,220,255,0)');
+    x.fillStyle = glow; x.fillRect(0, 0, w, h);
+    x.fillStyle = 'rgba(170,215,255,.16)';
+    for (let yy = 12; yy < h; yy += 14) for (let xx = 12; xx < w; xx += 14) { x.beginPath(); x.arc(xx, yy, 1.1, 0, Math.PI * 2); x.fill(); }
+    return c;
+  }
+  const iceSurface = { image: null, rect: () => icecard.getBoundingClientRect() };
+  function paintFrost(){
+    const r = icecard.getBoundingClientRect();
+    iceSurface.image = frostCanvas(r.width, r.height, Math.min(devicePixelRatio || 1, 2));
+    icecard.style.backgroundImage = `url(${iceSurface.image.toDataURL()})`;
+  }
+  paintFrost();
+  fx.ice = FX.attachIce($('freeze'), { surface: iceSurface });
+  $('freeze').addEventListener('click', () => { count('ice'); notify('Plan frozen. Deliveries paused until Jan 12.'); });
+
+  let lastW = innerWidth, rt = 0;
+  addEventListener('resize', () => {
+    clearTimeout(rt);
+    rt = setTimeout(() => {
+      if (innerWidth === lastW) return;
+      lastW = innerWidth;
+      paintConcrete(); fx.water.refresh?.();
+      paintFrost(); fx.ice.refresh?.();
+    }, 150);
+  });
+
+  // ferrofluid
+  fx.ferro = FX.attachFerro($('reserve'));
+  let reserved = 0;
+  $('reserve').addEventListener('click', () => { count('ferro'); reserved++; notify(reserved === 1 ? 'Reserved. We will email you before it ships.' : `Reserved ${reserved} units. Easy there.`); });
+
+  // soap bubble
+  fx.bubble = FX.attachBubble($('send'));
+  $('send').addEventListener('click', () => { count('bubble'); notify('Note sent to Mara.'); });
+
+  // sand: a real form submit
+  fx.sand = FX.attachSand($('subscribe'));
+  $('signup').addEventListener('submit', e => {
+    e.preventDefault();
+    count('sand');
+    notify(`Thanks, ${e.target.querySelector('input').value} is subscribed.`);
+  });
+
+  // fire: deploys, a match-scale re-run, and a draft that burns away
+  const logEl = $('log');
+  function log(msg, cls){
+    const li = document.createElement('li');
+    const t = document.createElement('time');
+    t.textContent = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    const s = document.createElement('span');
+    s.textContent = msg; if (cls) s.className = cls;
+    li.append(t, s);
+    logEl.prepend(li);
+    while (logEl.children.length > 7) logEl.lastChild.remove();
+  }
+  log('Watching acme/storefront');
+  function request(ms, fails){
+    let timer, reject;
+    const p = new Promise((res, rej) => { reject = rej; timer = setTimeout(() => fails ? rej(new Error('fail')) : res(), ms); });
+    p.abort = () => { clearTimeout(timer); reject(new DOMException('aborted', 'AbortError')); };
+    return p;
+  }
+  let build = 214, inflight = {};
+  $('deploy').addEventListener('click', () => count('fire'));
+  fx.fire = FX.attachFire($('deploy'), {
+    successText: 'Live',
+    pending(){
+      const id = ++build, t0 = performance.now();
+      log(`Deploy #${id} started`);
+      const r = inflight.deploy = request(1500 + Math.random() * 1000, false);
+      return r.then(() => {
+        const s = ((performance.now() - t0) / 1000).toFixed(1);
+        log(`Deploy #${id} is live (${s}s)`, 'ok');
+        notify(`Deployed a1f3c9e to production in ${s}s`);
+      }, err => { if (err.name !== 'AbortError') throw err; });
+    },
+    onCancel(){ inflight.deploy?.abort(); log('Deploy cancelled', 'warn'); notify('Deploy cancelled'); },
+  });
+  $('rerun').addEventListener('click', () => count('match'));
+  fx.match = FX.attachFire($('rerun'), {
+    scale: 'match',
+    successText: 'Passed',
+    pending(){
+      log('Re-running checks');
+      $('checks').textContent = 'running';
+      return request(1400 + Math.random() * 800, false).then(() => { $('checks').textContent = '14 passed'; log('Checks passed (14/14)', 'ok'); });
+    },
+  });
+  $('burn').addEventListener('click', () => count('burn'));
+  fx.burn = FX.attachFire($('burn'), {
+    consume: 'onSuccess',
+    successText: 'Gone',
+    pending(){ log('Deleting draft release-notes-v3.md'); return request(900, false).then(() => { log('Draft deleted', 'warn'); notify('Draft burned. Nothing left to recover.'); }); },
+  });
+
+  // stone: danger zone with a real confirm step
+  const del = $('delete'), confirmBox = $('confirm');
+  fx.rock = FX.attachRock(del, { material: 'auto' });
+  del.addEventListener('click', () => { count('rock'); confirmBox.classList.add('show'); del.setAttribute('aria-expanded', 'true'); });
+  $('keep').addEventListener('click', () => { confirmBox.classList.remove('show'); del.setAttribute('aria-expanded', 'false'); del.focus(); });
+  $('really').addEventListener('click', () => { confirmBox.classList.remove('show'); del.setAttribute('aria-expanded', 'false'); notify('Account scheduled for deletion on 27 Oct.', true); });
+
+  // one switch for every material's sound
+  const audios = ['waterAudio', 'sandAudio', 'rockAudio', 'fireAudio', 'ferroAudio', 'bubbleAudio', 'iceAudio'].map(k => FX[k]).filter(Boolean);
+  const mute = $('mute');
+  mute.addEventListener('click', () => {
+    const m = mute.getAttribute('aria-pressed') !== 'true';
+    for (const a of audios) a.muted = m;
+    mute.setAttribute('aria-pressed', String(m));
+    mute.setAttribute('aria-label', m ? 'Unmute sound' : 'Mute sound');
+    mute.querySelector('.on').style.display = m ? 'none' : '';
+    mute.querySelector('.off').style.display = m ? '' : 'none';
+  });
+})();
+</script>
+</body>
+</html>
