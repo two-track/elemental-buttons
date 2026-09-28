@@ -503,7 +503,8 @@ function attachSand(button, opts = {}){
   const DRAG_START = 5;
   const finger = () => Math.max(4, bh * 0.13);
 
-  function wake(sec){ activeUntil = Math.max(activeUntil, simT + sec); if (!raf) raf = requestAnimationFrame(frame); }
+  // one animation loop at most: a wake from inside a frame must not start a second loop
+  function wake(sec){ activeUntil = Math.max(activeUntil, simT + sec); if (!raf && !inFrame) raf = requestAnimationFrame(frame); }
 
   function stamp(x, y, r, depth){ stamps.push({ x, y, r, depth }); wake(2); }
 
@@ -571,7 +572,7 @@ function attachSand(button, opts = {}){
   button.addEventListener('click', onClick, true);
 
   // ---- frame
-  let raf = 0, last = performance.now(), dirty = true;
+  let raf = 0, inFrame = false, last = performance.now(), dirty = true;
   const grainData = new Float32Array(5 * 256);
 
   function step(dt){
@@ -673,7 +674,9 @@ function attachSand(button, opts = {}){
   }
 
   let manual = false;
+  let frameCount = 0;
   function advance(dt){
+    frameCount++;
     step(dt);
     const busy = simT < activeUntil || slump || reform || ptr || stamps.length || grains.length;
     if (busy || dirty){ simulate(dt); render(); dirty = false; }
@@ -683,7 +686,10 @@ function attachSand(button, opts = {}){
     raf = 0;
     const dt = Math.min((now - last) / 1000, 1 / 30); last = now;
     if (manual || gl.isContextLost()) return;
-    if (advance(dt)) raf = requestAnimationFrame(frame);
+    inFrame = true;
+    let busy;
+    try { busy = advance(dt); } finally { inFrame = false; }
+    if (busy) raf = requestAnimationFrame(frame);
     else last = performance.now();
   }
 
@@ -700,6 +706,7 @@ function attachSand(button, opts = {}){
   return {
     supported: true,
     get state(){ return state; },
+    get _frames(){ return frameCount; },
     detach(){
       cancelAnimationFrame(raf); ro.disconnect();
       removeEventListener('resize', onScrollResize); removeEventListener('scroll', onScrollResize);
