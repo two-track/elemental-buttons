@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pause Plan</title>
+<style>
+  :root {
+    --bg: #0b1422; --ink: #e8f1fb; --muted: #93a6bd; --line: rgba(160, 200, 240, .14); --accent: #8fd3ff;
+    --glow1: #17304d; --glow2: #10283a; --card: #122236; --plan: rgba(8, 18, 32, .55); --fine: #6f839b;
+  }
+  :root.light {
+    --bg: #eef3f8; --ink: #13233a; --muted: #56677d; --line: rgba(30, 70, 120, .14); --accent: #1f7fc4;
+    --glow1: #ffffff; --glow2: #dde8f3; --card: #ffffff; --plan: rgba(230, 238, 247, .8); --fine: #7a8aa0;
+  }
+  header a { color: var(--accent); text-decoration: none; margin-left: 14px; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; min-height: 100%; background: var(--bg); color: var(--ink);
+    font: 16px/1.55 -apple-system, BlinkMacSystemFont, "SF Pro Text", Inter, "Segoe UI", system-ui, sans-serif; }
+  body { background: radial-gradient(1200px 600px at 20% -10%, var(--glow1) 0%, transparent 60%), radial-gradient(900px 500px at 110% 110%, var(--glow2) 0%, transparent 60%), var(--bg); }
+  header { max-width: 980px; margin: 0 auto; padding: 22px 20px; display: flex; justify-content: space-between; align-items: center; color: var(--muted); font-size: 14px; }
+  header b { color: var(--ink); letter-spacing: .02em; }
+  main { min-height: calc(100vh - 80px); display: grid; place-items: center; padding: 24px 16px 64px; }
+  .card { position: relative; width: min(560px, 100%); border: 1px solid var(--line); border-radius: 22px;
+    padding: 38px 40px 40px; background-color: var(--card); background-size: 100% 100%;
+    box-shadow: 0 1px 0 rgba(255,255,255,.06) inset, 0 30px 70px -30px rgba(0,0,0,.7); }
+  .eyebrow { font-size: 12px; letter-spacing: .16em; text-transform: uppercase; color: var(--accent); font-weight: 600; margin: 0 0 10px; }
+  h1 { font-size: 30px; line-height: 1.15; margin: 0 0 12px; letter-spacing: -.01em; }
+  p { margin: 0 0 22px; color: var(--muted); }
+  .plan { display: flex; justify-content: space-between; padding: 14px 16px; border-radius: 12px; background: var(--plan);
+    border: 1px solid var(--line); margin-bottom: 30px; font-size: 14px; }
+  .plan span:last-child { color: var(--ink); font-weight: 600; }
+  .row { display: flex; gap: 18px; align-items: center; flex-wrap: wrap; }
+  .ice { height: 60px; padding: 0 34px; border-radius: 14px; border: 0; background: #bfe6ff; color: #0b2340;
+    font: 700 19px/1 -apple-system, BlinkMacSystemFont, "SF Pro Display", Inter, "Segoe UI", system-ui, sans-serif; letter-spacing: .01em; cursor: pointer; }
+  .ice:focus-visible { outline: 2px solid var(--accent); outline-offset: 8px; }
+  .ghost { background: none; border: 0; color: var(--muted); font: inherit; font-size: 14px; cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
+  .fine { margin: 30px 0 0; font-size: 13px; color: var(--fine); }
+  .toast { position: fixed; left: 50%; bottom: 28px; transform: translate(-50%, 20px); opacity: 0; transition: .35s ease;
+    background: #e9f6ff; color: #0b2340; padding: 12px 18px; border-radius: 12px; font-size: 15px; font-weight: 600;
+    box-shadow: 0 16px 40px -12px rgba(0,0,0,.6); z-index: 50; pointer-events: none; }
+  .toast.on { opacity: 1; transform: translate(-50%, 0); }
+  .count { font-variant-numeric: tabular-nums; }
+</style>
+</head>
+<body>
+<header><b>Northwind Coffee Club</b><span>Account &middot; Subscription <a id="theme" href="?light">Light page</a></span></header>
+<main>
+  <section class="card" id="card">
+    <p class="eyebrow">Taking a break?</p>
+    <h1>Put your plan on ice.</h1>
+    <p>Freeze deliveries for up to three months. Billing stops, your roast preferences stay exactly where they are, and it thaws on its own.</p>
+    <div class="plan"><span>Cold Brew Concentrate &middot; 2 bags / month</span><span>$34 / mo</span></div>
+    <div class="row">
+      <button class="ice" id="freeze" type="button">Freeze my plan</button>
+      <button class="ghost" type="button">Cancel instead</button>
+    </div>
+    <p class="fine">Break the ice, then click a chunk to crush it into the page and scrape the chips around. Leave it alone and it grows back. Frozen <span class="count" id="count">0</span> times.</p>
+  </section>
+</main>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+<script src="fx/ice.js"></script>
+<script>
+  const light = new URLSearchParams(location.search).has('light');
+  if (light){ document.documentElement.classList.add('light'); const a = document.getElementById('theme'); a.textContent = 'Dark page'; a.href = '?'; }
+  const pal = light
+    ? { a: '#ffffff', b: '#f1f6fb', g1: 'rgba(120, 190, 255, .16)', g2: 'rgba(150, 130, 255, .10)', dot: 'rgba(40, 90, 150, .16)', flake: 'rgba(60, 120, 190, .14)' }
+    : { a: '#15293f', b: '#0f1d2e', g1: 'rgba(120, 220, 255, .16)', g2: 'rgba(140, 120, 255, .12)', dot: 'rgba(170, 215, 255, .16)', flake: 'rgba(190, 230, 255, .10)' };
+  // A frosty backdrop for the card, painted once, so the ice has something to refract.
+  function frostCanvas(w, h, s){
+    const c = document.createElement('canvas');
+    c.width = Math.round(w * s); c.height = Math.round(h * s);
+    const x = c.getContext('2d');
+    x.scale(s, s);
+    const g = x.createLinearGradient(0, 0, w, h);
+    g.addColorStop(0, pal.a); g.addColorStop(1, pal.b);
+    x.fillStyle = g; x.fillRect(0, 0, w, h);
+    const glow = x.createRadialGradient(w * 0.85, h * 0.1, 0, w * 0.85, h * 0.1, w * 0.7);
+    glow.addColorStop(0, pal.g1); glow.addColorStop(1, 'rgba(120, 220, 255, 0)');
+    x.fillStyle = glow; x.fillRect(0, 0, w, h);
+    const glow2 = x.createRadialGradient(w * 0.1, h * 0.95, 0, w * 0.1, h * 0.95, w * 0.6);
+    glow2.addColorStop(0, pal.g2); glow2.addColorStop(1, 'rgba(140, 120, 255, 0)');
+    x.fillStyle = glow2; x.fillRect(0, 0, w, h);
+    // fine dotted grid, so refraction through the ice is visible
+    x.fillStyle = pal.dot;
+    for (let yy = 12; yy < h; yy += 14) for (let xx = 12; xx < w; xx += 14) { x.beginPath(); x.arc(xx, yy, 1.1, 0, Math.PI * 2); x.fill(); }
+    // a few snowflake glyphs
+    x.strokeStyle = pal.flake; x.lineWidth = 1.4;
+    const flake = (cx, cy, r) => { for (let i = 0; i < 6; i++){ const a = i * Math.PI / 3; x.beginPath(); x.moveTo(cx, cy); x.lineTo(cx + Math.cos(a) * r, cy + Math.sin(a) * r);
+      const bx = cx + Math.cos(a) * r * 0.6, by = cy + Math.sin(a) * r * 0.6;
+      for (const d of [-0.6, 0.6]){ x.moveTo(bx, by); x.lineTo(bx + Math.cos(a + d) * r * 0.3, by + Math.sin(a + d) * r * 0.3); } x.stroke(); } };
+    flake(w - 70, 70, 34); flake(w - 150, h - 60, 22); flake(60, h - 110, 16);
+    return c;
+  }
+  const card = document.getElementById('card');
+  const r = card.getBoundingClientRect();
+  const bg = frostCanvas(r.width, r.height, Math.min(devicePixelRatio || 1, 2));
+  card.style.backgroundImage = `url(${bg.toDataURL()})`;
+  window.__icefx = ElementalFX.attachIce(document.getElementById('freeze'), { surface: { image: bg, rect: () => card.getBoundingClientRect() } });
+
+  let n = 0, tt = 0;
+  document.getElementById('freeze').addEventListener('click', () => {
+    n++;
+    document.getElementById('count').textContent = n;
+    const t = document.getElementById('toast');
+    t.textContent = 'Plan frozen. Deliveries paused until Jan 12.';
+    t.classList.add('on');
+    clearTimeout(tt); tt = setTimeout(() => t.classList.remove('on'), 2600);
+  });
+</script>
+</body>
+</html>
