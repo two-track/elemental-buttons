@@ -58,14 +58,6 @@
   .eyebrow2 { font-size: 12px; letter-spacing: .14em; text-transform: uppercase; font-weight: 600; color: var(--soft); margin: 0 0 10px; }
   .center { display: grid; place-items: center; padding: 18px 0 6px; }
 
-  /* ferrofluid: product reservation */
-  .product { display: grid; grid-template-columns: 96px 1fr; gap: 18px; align-items: center; margin-bottom: 22px; }
-  .orb { width: 96px; height: 96px; border-radius: 26px; background: radial-gradient(circle at 35% 30%, #5d6066, #0b0b0c 62%); box-shadow: 0 16px 30px -18px #000; }
-  .price { font: 700 26px/1 var(--display); letter-spacing: -.02em; }
-  .price small { font-size: 13px; color: var(--muted); font-weight: 500; letter-spacing: 0; }
-  .ferro { height: 60px; padding: 0 42px; border-radius: 999px; border: 0; background: #111; color: #fff; font: 700 18px/1 var(--display); cursor: pointer; }
-  .ferro:focus { outline: none; } .ferro:focus-visible { outline: 2px solid var(--ink); outline-offset: 10px; }
-
   /* bubble: compose */
   .compose { border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px; margin-bottom: 22px; background: #fbfbfd; }
   .compose .to { font-size: 13px; color: var(--muted); border-bottom: 1px solid var(--line); padding-bottom: 8px; margin-bottom: 10px; }
@@ -116,11 +108,6 @@
   .add { height: 56px; padding: 0 40px; border-radius: 14px; border: 0; background: #1f2a44; color: #fff; font: 650 17px/1 var(--sans); letter-spacing: .01em; cursor: pointer; }
   .add:focus-visible { outline: 2px solid var(--ink); outline-offset: 7px; }
 
-  /* filings: lab kit */
-  .kit { height: 64px; padding: 0 44px; border-radius: 14px; border: 1px solid #d6cbb3; background: #ebe4d4; color: #1f1c16; font: 700 18px/1 var(--display); cursor: pointer;
-    box-shadow: 0 1px 0 rgba(255,255,255,.6) inset, 0 10px 24px -14px rgba(40,30,10,.45); }
-  .kit:focus-visible { outline: 2px solid var(--ink); outline-offset: 7px; }
-
   /* glass: incident console, painted backdrop so the glass has something to refract */
   #glasscard { background-color: #e9f0ec; background-size: cover; }
   .glass { height: 62px; padding: 0 38px; border-radius: 10px; border: 0; background: #cfe9df; color: #0d2a22;
@@ -163,7 +150,7 @@
 <section class="hero" id="hero">
   <p class="eyebrow">Fieldwork 3.0</p>
   <h1>Interfaces with real material.</h1>
-  <p>Every button on this page is an ordinary &lt;button&gt;. They just happen to be made of water, sand, stone, fire, ferrofluid, soap film, ice, glass, porcelain and iron filings.</p>
+  <p>Every button on this page is an ordinary &lt;button&gt;. They just happen to be made of water, sand, stone, fire, soap film, ice, glass and porcelain.</p>
   <button class="water" id="start" type="button">Get started</button>
 </section>
 
@@ -174,15 +161,6 @@
   </div>
 
   <div class="grid">
-    <section class="card">
-      <span class="tag">Ferrofluid</span>
-      <p class="eyebrow2">Lodestone speaker</p>
-      <div class="product"><div class="orb" aria-hidden="true"></div>
-        <div><h3>A speaker that dances.</h3><div class="price">$349 <small>ships in March</small></div></div></div>
-      <p>Your cursor is a magnet. Move near the button, flick past it, press and hold.</p>
-      <div class="center"><button class="ferro" id="reserve" type="button">Reserve yours</button></div>
-    </section>
-
     <section class="card">
       <span class="tag">Soap bubble</span>
       <p class="eyebrow2">Quick note</p>
@@ -243,14 +221,6 @@
       <div class="center"><button class="add" id="addmug" type="button">Add to cart</button></div>
     </section>
 
-    <section class="card">
-      <span class="tag">Iron filings</span>
-      <p class="eyebrow2">Field Lab kits</p>
-      <h3>Magnetism, in a box.</h3>
-      <p>Your cursor is the magnet. Hover, press and hold, then let go.</p>
-      <div class="center"><button class="kit" id="kit" type="button">Order the kit</button></div>
-    </section>
-
     <section class="card wide" id="glasscard">
       <span class="tag">Glass</span>
       <p class="eyebrow2">Harbor Ops</p>
@@ -281,12 +251,10 @@
 <script src="fx/sand.js"></script>
 <script src="fx/rock.js"></script>
 <script src="fx/fire.js"></script>
-<script src="fx/ferro.js"></script>
 <script src="fx/bubble.js"></script>
 <script src="fx/ice.js"></script>
 <script src="fx/glass.js"></script>
 <script src="fx/ceramic.js"></script>
-<script src="fx/filings.js"></script>
 <script>
 (() => {
   const FX = window.ElementalFX;
@@ -361,11 +329,6 @@
     }, 150);
   });
 
-  // ferrofluid
-  fx.ferro = FX.attachFerro($('reserve'));
-  let reserved = 0;
-  $('reserve').addEventListener('click', () => { count('ferro'); reserved++; notify(reserved === 1 ? 'Reserved. We will email you before it ships.' : `Reserved ${reserved} units. Easy there.`); });
-
   // soap bubble
   fx.bubble = FX.attachBubble($('send'));
   $('send').addEventListener('click', () => { count('bubble'); notify('Note sent to Mara.'); });
@@ -436,10 +399,6 @@
   let mugs = 0;
   $('addmug').addEventListener('click', () => { count('ceramic'); mugs++; notify(mugs === 1 ? 'Mug added to cart.' : `${mugs} mugs in your cart.`); });
 
-  // iron filings
-  fx.filings = FX.attachFilings($('kit'), { color: 'iron' });
-  $('kit').addEventListener('click', () => { count('filings'); notify('Kit ordered. Magnets ship separately.'); });
-
   // glass: a hazard-striped backdrop painted for the card, so the refraction reads
   const glasscard = $('glasscard');
   function hazardCanvas(w, h, s){
@@ -477,7 +436,7 @@
   $('really').addEventListener('click', () => { confirmBox.classList.remove('show'); del.setAttribute('aria-expanded', 'false'); notify('Account scheduled for deletion on 27 Oct.', true); });
 
   // one switch for every material's sound
-  const audios = ['waterAudio', 'sandAudio', 'rockAudio', 'fireAudio', 'ferroAudio', 'bubbleAudio', 'iceAudio', 'glassAudio', 'ceramicAudio', 'filingsAudio'].map(k => FX[k]).filter(Boolean);
+  const audios = ['waterAudio', 'sandAudio', 'rockAudio', 'fireAudio', 'bubbleAudio', 'iceAudio', 'glassAudio', 'ceramicAudio'].map(k => FX[k]).filter(Boolean);
   const mute = $('mute');
   mute.addEventListener('click', () => {
     const m = mute.getAttribute('aria-pressed') !== 'true';
