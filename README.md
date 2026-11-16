@@ -4,7 +4,7 @@
 
 **Drop-in effects that turn an ordinary `<button>` into water, fire, stone, sand, soap film, ice, glass or porcelain.**
 
-<img src="docs/water-button.gif" alt="A water button is pressed, splashes into droplets, and the droplets flow back into the button" width="480">
+<video src="docs/water-button.mp4" width="480" autoplay loop muted playsinline controls aria-label="A water button is pressed, splashes into droplets, and the droplets flow back into the button"></video>
 
 <sub>The water button being pressed. It pops into droplets and reforms a moment later.</sub>
 
@@ -63,13 +63,13 @@ The other effects attach the same way: `attachFire`, `attachRock`, `attachSand`,
 
 <div align="center">
 
-<img src="docs/fire-button.gif" alt="A fire button labelled Deploy bursts into flame, shows a live state, and a second button, Burn draft, burns away" width="480">
+<video src="docs/fire-button.mp4" width="480" autoplay loop muted playsinline controls aria-label="A fire button labelled Deploy bursts into flame, shows a live state, and a second button, Burn draft, burns away"></video>
 
 <sub>Fire: a click lights the button, and "Burn draft" burns away.</sub>
 
 <br><br>
 
-<img src="docs/rock-button.gif" alt="A stone Delete account button in a danger-zone card shatters into chunks and then reassembles" width="480">
+<video src="docs/rock-button.mp4" width="480" autoplay loop muted playsinline controls aria-label="A stone Delete account button in a danger-zone card shatters into chunks and then reassembles"></video>
 
 <sub>Stone: a click cracks the button apart in a danger-zone card.</sub>
 
