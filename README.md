@@ -20,6 +20,14 @@ This is a collection of prototypes and demos, not a finished library. There is n
 
 This started from a post in r/UI_Design titled ["Water drop button"](https://www.reddit.com/r/UI_Design/comments/1h85rbb/water_drop_button/), a grey concrete button with a water-drop finish, made in Figma as an experiment. The effects here are a from-scratch attempt at the same look, plus the physics: press, splash, reform.
 
+<div align="center">
+
+<a href="https://www.reddit.com/r/UI_Design/comments/1h85rbb/water_drop_button/"><img src="docs/reddit-water-drop-button.png" alt="Screenshot of the r/UI_Design post: a grey concrete button labelled Button, with a water-drop finish" width="480"></a>
+
+<sub>The original post, made in Figma.</sub>
+
+</div>
+
 ## Quick start
 
 Each effect is one classic script in `fx/`, so the pages also work when opened from `file://`.
