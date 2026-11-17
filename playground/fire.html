@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Fire button</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #c9c7c2; overflow: hidden; }
+  body { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 48px; }
+  .btn.small { font-size: 14px; padding: 9px 16px; border-radius: 8px; }
+  .btn {
+    font: 600 20px/1 system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
+    padding: 15px 28px; border: 0; border-radius: 12px;
+    background: #111; color: #fff; cursor: pointer;
+  }
+</style>
+</head>
+<body>
+<button class="btn small" id="match" type="button">BUTTON</button>
+<button class="btn" id="bonfire" type="button">BUTTON</button>
+<button class="btn" id="burnaway" type="button">BUTTON</button>
+<script src="../fx/water.js"></script>
+<script src="../fx/fire.js"></script>
+<script>
+  const W = innerWidth, H = innerHeight;
+  const concrete = ElementalFX.concreteCanvas(W, H);
+  concrete.toBlob(b => { document.body.style.backgroundImage = `url(${URL.createObjectURL(b)})`; document.body.style.backgroundSize = '100% 100%'; });
+  ElementalFX.attachFire(document.getElementById('match'), { scale: 'match' });
+  ElementalFX.attachFire(document.getElementById('bonfire'));
+  ElementalFX.attachFire(document.getElementById('burnaway'), { scale: 'campfire', consume: 'onSuccess' });
+</script>
+</body>
+</html>

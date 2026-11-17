@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Glass button</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #c9c7c2; overflow: hidden; }
+  body { display: grid; place-items: center; }
+  #btn {
+    font: 600 20px/1 system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
+    padding: 15px 28px; border: 0; border-radius: 12px;
+    background: #111; color: #fff; cursor: pointer;
+  }
+</style>
+</head>
+<body>
+<button id="btn" type="button">BUTTON</button>
+<script src="../fx/water.js"></script>
+<script src="../fx/glass.js"></script>
+<script>
+  const btn = document.getElementById('btn');
+  const M = Math.round(Math.max(innerWidth, innerHeight) * 0.9);
+  const W = innerWidth, H = innerHeight;
+  const concrete = ElementalFX.concreteCanvas(W, H);
+  const surface = { image: concrete, rect: () => ({ left: 0, top: 0, width: W, height: H }) };
+  concrete.toBlob(b => { document.body.style.backgroundImage = `url(${URL.createObjectURL(b)})`; document.body.style.backgroundSize = '100% 100%'; });
+  const fx = ElementalFX.attachGlass(btn, { margin: M, surface });
+</script>
+</body>
+</html>
