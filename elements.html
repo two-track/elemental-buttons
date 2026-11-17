@@ -123,11 +123,6 @@
   .danger-row span { color: var(--muted); font-size: 14px; }
   .rock { height: 46px; padding: 0 24px; border-radius: 10px; border: 0; background: var(--danger); color: #fff; font: 700 15px/1 var(--display); cursor: pointer; }
   .rock:focus-visible { outline: 2px solid var(--danger-ink); outline-offset: 6px; }
-  .confirm { margin-top: 20px; padding: 16px; border-radius: 12px; background: var(--danger-bg); border: 1px solid var(--danger-line); display: none; gap: 12px; align-items: center; flex-wrap: wrap; }
-  .confirm.show { display: flex; }
-  .confirm p { margin: 0; flex: 1 1 240px; color: var(--ink); font-size: 14px; }
-  .btn { height: 36px; padding: 0 16px; border-radius: 9px; border: 1px solid var(--line); background: #fff; color: var(--ink); font: 600 14px/1 var(--sans); cursor: pointer; }
-  .btn.really { background: var(--danger); color: #fff; border-color: transparent; }
 
   footer { max-width: 1120px; margin: 0 auto; padding: 0 clamp(16px, 4vw, 40px) 60px; color: var(--soft); font-size: 13px; }
 
@@ -150,14 +145,14 @@
 <section class="hero" id="hero">
   <p class="eyebrow">Fieldwork</p>
   <h1>Interfaces with real material.</h1>
-  <p>Every button on this page is an ordinary &lt;button&gt;. They just happen to be made of water, sand, stone, fire, soap film, ice, glass and porcelain.</p>
+  <p>Every button on this page is an ordinary &lt;button&gt;. They just HAPPEN to be made of water, sand, stone, fire, soap film, ice, glass and porcelain.</p>
   <button class="water" id="start" type="button">Get started</button>
 </section>
 
 <main>
   <div class="intro" id="product">
     <h2>Try pressing things.</h2>
-    <p>Each one does its real job: the form submits, the deploy runs, the account asks before it goes. Drag, poke and smash them; they put themselves back together.</p>
+    <p>Each one is a real HTML button, and can do anything a normal button can do - and more! Drag, poke and smash them; they put themselves back together when you're done. I dare your boring rectangles to grab attention like this.</p>
   </div>
 
   <div class="grid">
@@ -176,7 +171,7 @@
       <span class="tag">Sand</span>
       <p class="eyebrow2">Field notes</p>
       <h3>One letter a month about slow design.</h3>
-      <p>Essays, sketches and the odd recipe. Press the button, or drag a finger through it.</p>
+      <p>Essays, sketches and the odd recipe.<br>Press or drag through the button.</p>
       <form class="row" id="signup">
         <input type="email" required placeholder="you@example.com" aria-label="Email address">
         <button class="sand" id="subscribe" type="submit">Subscribe</button>
@@ -206,7 +201,7 @@
       <div class="deploy">
         <div>
           <h3>Ship it.</h3>
-          <p>Strike to deploy; the flame burns while the build runs. Swipe across it fast to blow it out and cancel.</p>
+          <p>Strike to deploy; the flame burns while the build runs.<br>Swipe across it fast to blow it out and cancel.</p>
           <ul class="meta">
             <li><span>Branch</span><span>main · a1f3c9e</span></li>
             <li><span>Checks</span><span style="display:flex;gap:10px;align-items:center"><span class="pill" id="checks">14 passed</span><button class="mini" id="rerun" type="button">Re-run</button></span></li>
@@ -223,9 +218,9 @@
 
     <section class="card wide" id="glasscard">
       <span class="tag">Glass</span>
-      <p class="eyebrow2">Harbor Ops</p>
+      <p class="eyebrow2">Alarm Button</p>
       <h3>Incident mode.</h3>
-      <p>Pages everyone on call and freezes deploys. Break only if you mean it.</p>
+      <p>Break glass in case of emergency.<br>Okay, just break it. I know you want to.</p>
       <div class="center"><button class="glass" id="breakglass" type="button">Break glass</button></div>
     </section>
 
@@ -233,18 +228,13 @@
       <span class="tag">Stone</span>
       <h3>Danger zone</h3>
       <div class="danger-row">
-        <div class="txt"><b>Delete account</b><span>Permanently remove your workspace, projects and billing history.</span></div>
-        <button class="rock" id="delete" type="button" aria-controls="confirm" aria-expanded="false">Delete account</button>
-      </div>
-      <div class="confirm" id="confirm">
-        <p>This cannot be undone. Delete the Fieldwork workspace?</p>
-        <button class="btn" id="keep" type="button">Keep it</button>
-        <button class="btn really" id="really" type="button">Delete for good</button>
+        <div class="txt"><b>Delete account</b><span>Permanently remove your imaginary workspace and nonexistent projects.</span></div>
+        <button class="rock" id="delete" type="button">Delete account</button>
       </div>
     </section>
   </div>
 </main>
-<footer>Fieldwork is a made-up company. The buttons are real.</footer>
+<footer>Fieldwork is a made-up company. The buttons are real.<br>Why anyone would ever use them seriously, I'm not sure, but they exist now. Thanks, Claude.</footer>
 <div id="toast" role="status" aria-live="polite"><span></span></div>
 
 <script src="fx/water.js"></script>
@@ -426,14 +416,12 @@
   }
   paintHazard();
   fx.glass = FX.attachGlass($('breakglass'), { surface: glassSurface, tint: 'clear' });
-  $('breakglass').addEventListener('click', () => { count('glass'); notify('Incident declared. On-call has been paged.', true); });
+  $('breakglass').addEventListener('click', () => { count('glass'); notify('Incident declared. Thank you for your attention to this incident.', true); });
 
-  // stone: danger zone with a real confirm step
-  const del = $('delete'), confirmBox = $('confirm');
+  // stone: danger zone demo
+  const del = $('delete');
   fx.rock = FX.attachRock(del, { material: 'auto' });
-  del.addEventListener('click', () => { count('rock'); confirmBox.classList.add('show'); del.setAttribute('aria-expanded', 'true'); });
-  $('keep').addEventListener('click', () => { confirmBox.classList.remove('show'); del.setAttribute('aria-expanded', 'false'); del.focus(); });
-  $('really').addEventListener('click', () => { confirmBox.classList.remove('show'); del.setAttribute('aria-expanded', 'false'); notify('Account scheduled for deletion on 27 Oct.', true); });
+  del.addEventListener('click', () => { count('rock'); });
 
   // one switch for every material's sound
   const audios = ['waterAudio', 'sandAudio', 'rockAudio', 'fireAudio', 'bubbleAudio', 'iceAudio', 'glassAudio', 'ceramicAudio'].map(k => FX[k]).filter(Boolean);
