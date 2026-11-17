@@ -4,7 +4,7 @@
 
 **Drop-in effects that turn an ordinary `<button>` into water, fire, stone, sand, soap film, ice, glass or porcelain.**
 
-<!-- drop docs/water-button.mp4 here -->
+https://github.com/user-attachments/assets/c7d6ce28-5cda-4f32-aadc-621cfd5d1b2a
 
 <sub>The water button being pressed. It pops into droplets and reforms a moment later.</sub>
 
@@ -63,13 +63,19 @@ The other effects attach the same way: `attachFire`, `attachRock`, `attachSand`,
 
 <div align="center">
 
-<!-- drop docs/fire-button.mp4 here -->
+
+https://github.com/user-attachments/assets/3f724a3e-74be-4c18-92e0-76a34f1178d4
+
 
 <sub>Fire: a click lights the button, and "Burn draft" burns away.</sub>
 
 <br><br>
 
-<!-- drop docs/rock-button.mp4 here -->
+
+
+https://github.com/user-attachments/assets/01869c9e-7eda-46c8-a3b6-185df2ae370b
+
+
 
 <sub>Stone: a click cracks the button apart in a danger-zone card.</sub>
 
