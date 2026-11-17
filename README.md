@@ -28,6 +28,10 @@ This started from a post in r/UI_Design titled ["Water drop button"](https://www
 
 </div>
 
+## See it running
+
+Clone or download the repo, then open [`elements.html`](elements.html) in a browser. It runs straight from the file, with no server, install or build step. The page shows all eight effects on real buttons. Nothing is loaded from the network.
+
 ## Quick start
 
 Each effect is one classic script in `fx/`, so the pages also work when opened from `file://`.
